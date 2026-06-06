@@ -1,0 +1,21 @@
+// Add these entries to your consumer repo's .vscode/settings.json to let
+// VS Code Copilot Chat discover the toolkit's skills, agents, and prompts.
+//
+// Both mount modes (submodule and sync) land at the same relative path
+// ".copilot-toolkit/", so this snippet is mode-agnostic.
+//
+// Already have a settings.json? Merge these keys in -- do not replace the
+// whole file. If you already use any of these keys for other locations, add
+// the ".copilot-toolkit/.github/..." paths alongside your existing entries
+// (the value is a map; set true to enable, false to disable).
+{
+  "chat.agentSkillsLocations": {
+    ".copilot-toolkit/.github/skills": true
+  },
+  "chat.agentFilesLocations": {
+    ".copilot-toolkit/.github/agents": true
+  },
+  "chat.promptFilesLocations": {
+    ".copilot-toolkit/.github/prompts": true
+  }
+}
