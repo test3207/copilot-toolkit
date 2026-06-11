@@ -61,6 +61,16 @@ Pass to tracer:
    cheapest verification
 5. **Impact assessment** — affected users, severity, when introduced (if cheaply found)
 
+**Subagent-fidelity rule** (Standard + Deep only): each artifact above must
+either (a) cite a specific section of the tracer's return that supports it
+(e.g. `rca-tracer §Call-chain frame 3`), or (b) be explicitly marked
+`main-agent addition: <reason>` when you add a point the tracer did not
+raise. Silent divergence between tracer findings and your assembled artifacts
+is the #1 way RCAs collapse back to the first plausible patch site. If you
+cannot cite a tracer source for a code-location-chain frame or a ranked
+hypothesis, you have not yet earned the right to assert it — re-dispatch
+with a narrower question, or ask the user.
+
 ### 2.4 RCA confirmation
 
 Present artifacts (2.3) to user. **Wait for explicit confirmation of the root cause
@@ -83,10 +93,35 @@ before designing the fix.**
 4. **Test cases** — verify fix works (happy path) + verify no regression + edge cases
 5. **Rejected alternatives** (>=1) — what else was considered, why this approach wins
 
-For Deep depth (cross-layer): dispatch `work-impact-tracer` if not already dispatched
-in Step 2, to populate the regression table from real call-chain data.
+**Subagent-fidelity rule** (Standard + Deep only): each artifact above must
+either (a) cite a specific section of the impact-tracer return that supports
+it (e.g. `impact-tracer §Regression row 4`), or (b) be explicitly marked
+`main-agent addition: <reason>`. The regression risk table (§3.1.3) is the
+most dangerous artifact to populate from memory — under context pressure the
+main agent systematically underestimates blast radius. If §3.2 has already
+dispatched the tracer, every regression-table row should cite a tracer row.
 
-### 3.2 Confirmation
+### 3.2 MANDATORY impact dispatch (Standard + Deep)
+
+**Self-check**: if your next planned tool call is `edit_file` or any write op AND
+`[Confirm Fix]` has not been given AND depth is Standard or Deep, **STOP**. Issue
+`runSubagent` to `work-impact-tracer` to populate §3.1.3 (Regression risk table)
+from real call-chain data, not from your own recall of the codebase.
+
+- Standard depth: dispatch `work-impact-tracer` against the chosen fix layer + the
+  touch list derived from §3.1.1 / §3.1.2.
+- Deep depth: same, AND re-dispatch `work-rca-tracer` if any hypothesis ranking
+  has shifted since §2.4.
+
+If `work-impact-tracer` was already dispatched in §2.2 (Deep RCA), you MAY skip
+re-dispatch only when the fix layer matches the cause layer it already traced; any
+other case requires a fresh dispatch scoped to the fix layer.
+
+Why this rule exists: under context pressure the main agent fills the regression
+table from memory of the RCA — which systematically underestimates blast radius
+for cross-layer fixes. The tracer enumerates real callers; you do not.
+
+### 3.3 Confirmation
 
 **Wait for explicit user confirmation before implementing.**
 

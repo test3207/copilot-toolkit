@@ -80,8 +80,30 @@ files, edits, builds, runs UTs, audits DAP-07/08, and returns a compact summary.
 - IF `status: blocked` -> resolve the cited question (read the cited file range
   yourself, or ask user) then re-dispatch with an updated spec. Do NOT escalate
   to "I'll write the code myself" — that defeats the context-isolation gain.
-- IF `status: complete` -> present the summary to the user verbatim and wait for
-  acknowledgement before proceeding to PR.
+- IF `status: complete` -> **MANDATORY: closure validation before user
+  acknowledgement.** In a **single parallel `runSubagent` block**, dispatch
+  `work-closure-direction-validator` AND `work-closure-detail-validator` with
+  inputs:
+  - `toolkit-root`: same value passed to implementer
+  - `outputDir`: `tmp/work/<item-id>/`
+  - `request`: the original user request that led to this work item
+  - `implementerSummary`: the verbatim summary just returned
+  - `changedPaths`: file list from the implementer summary's "Files Modified" table
+  - `scope`: `all-changes-since-handoff`
+
+  Then read both compact response summaries and apply the gate per finding:
+  - **Soft action** (auto): finding has `confidence=high AND impact=low`.
+    Re-dispatch `work-implementer` with the finding appended to the spec's
+    Notes section.
+  - **Hard action** (stop and surface to user): every other combination
+    (`confidence=low *` or `* impact=high`). Present the implementer summary
+    AND the validator findings (counts per severity per validator + brief
+    one-line description per finding, with paths to the full section files at
+    `tmp/work/<item-id>/50-direction.md` and `51-detail.md`). Wait for the
+    user's response before doing anything else.
+
+  Self-check: if your next planned action after implementer returns is anything
+  other than the parallel validator dispatch above, **STOP** and dispatch.
 
 ---
 
@@ -98,7 +120,7 @@ user-impacting error scenarios + edge cases identified in design phase.
 After user acknowledges the implementation summary:
 
 - Generate commit message: `<type>: <description><provider.commitMessageSuffix(itemId)>` — types:
-  feat, fix, refactor, docs, test, chore. ADO provider yields ` (WI-12345)`; GitHub provider yields ` (#42)`.
+  feat, fix, refactor, docs, test, chore. ADO provider yields `(WI-12345)`; GitHub provider yields `(#42)`.
 - Stage + commit + push from the main agent (implementer left a clean diff).
 - Create PR (MCP: `repo_create_pull_request` for ADO; `gh pr create` for GitHub)
   - For ADO: repository ID = `repo-guid` from registry (not repo name); target branch = `branch` from registry; MCP server = `ado-repo-server` from registry.

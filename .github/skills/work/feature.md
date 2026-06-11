@@ -72,6 +72,16 @@ After subagents return, the main agent assembles and presents these.
 6. **Code architecture** (Full only) — component structure, file organization,
    data flow between components
 
+**Subagent-fidelity rule** (Medium + Full only): each artifact above must
+either (a) cite a specific section of the subagent's return that supports it
+(e.g. `architect-explorer §Touch-points row 2`), or (b) be explicitly marked
+`main-agent addition: <reason>` when you add a point the subagent did not
+raise. Silent divergence between subagent findings and your assembled
+artifacts is the #1 way pre-confirm reviews drift back to your own codebase
+guess. If you cannot cite a subagent source for a touch point, you have not
+yet earned the right to assert it — re-dispatch with a narrower question, or
+ask the user.
+
 ### 2.4 Confirmation
 
 Present artifacts (2.3) + classification (2.1) to the user. **Wait for explicit user

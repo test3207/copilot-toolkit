@@ -80,6 +80,25 @@ Load the matching workflow file for the exact phase list; mirror it into the tod
 
 The pre-confirm explorers stop the main agent from patching the symptom layer. The post-confirm implementer stops the main agent's context from filling with file reads / multi-edit hunks / build output once design is frozen. PR creation, commit message, and tracked-item updates stay with the main agent.
 
+### Classification is sticky
+
+Once a phase's depth is recorded (feature.md §2.1 / bugfix.md §2.1), it MUST NOT
+be silently downgraded to skip the corresponding subagent dispatch:
+
+- Medium → Light, Standard → Light, Full → Medium, Deep → Standard: each requires
+  an **explicit user-visible note** of the form "downgrading <phase> from <X> to
+  <Y> because <reason>" plus **explicit user agreement** before proceeding.
+- "It turns out to be simpler than I first thought" is the most common rationalisation
+  for an unsafe downgrade. Under context pressure, what looks simple to the main
+  agent is usually a missed seam the subagent would have found.
+- Upgrading (Light → Medium, Medium → Full, etc.) is always free and does not
+  require permission — escalate without asking.
+
+Self-check: if your next planned action is "inline edit because actually this is
+Light", and the recorded classification is not Light, **STOP** and either dispatch
+the subagent the recorded depth requires, or surface the downgrade request to the
+user with reason.
+
 ## Rules
 
 - Skill body and all files in this directory are HOST-AGNOSTIC. Any tracker-specific recipe (URL format, fetch / create / link, commit-message suffix) belongs in `providers/<name>.md`, never in `feature.md` / `bugfix.md` / `shared.md` / `anti-patterns/`.
