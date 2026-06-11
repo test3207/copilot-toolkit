@@ -49,8 +49,8 @@ For each PR in `completed_prs[]`:
 
 For each PR in `tool_reviewed_prs[]`, parse the latest tool comment body:
 
-- **Action Items**: lines matching `- \[(?<box>[ Xx])\] \*\*\[(Bug|Bug potential|High|Medium|Low|Nit|Question)\]\*\*` -- extract: severity tag, file (between backticks), description, and a `state` field (`open` for `[ ]`, `done` for `[X]`/`[x]`). `state=done` means the author checked the box in the tool comment to indicate they addressed the item; downstream effectiveness logic auto-marks these as `effective` when no explicit subagent verdict is supplied.
-- **Intent & Approach > Change Type**: regex `(?im)^\s*[*_]{0,2}\s*Change\s*Type\s*[*_]{0,2}\s*:\s*(.+)$` -- captures the value line (tolerating `**Change Type**:` / `__Change Type__:` markdown bolding around the field name), then scans the value for the first `(Config|UI|Signature|Logic|API)` bucket. Default `unknown` if absent. Combined values like `Logic/UI`, `Function Signature / API Contract`, `Config/Script` resolve to the first matching bucket.
+- **Action Items**: lines matching `- \[(?<box>[ Xx])\] \*\*\[(Bug|Bug potential|High|Medium|Low|Nit|Question)\]\*\*` -- extract: severity tag, file (between backticks), description, and `state` (`open` for `[ ]`, `done` for `[X]`/`[x]`). `state=done` means the author addressed the item; downstream auto-marks these `effective` when no explicit subagent verdict is supplied.
+- **Change Type**: regex `(?im)^\s*[*_]{0,2}\s*Change\s*Type\s*[*_]{0,2}\s*:\s*(.+)$` (tolerates `**`/`__` bolding), then first `(Config|UI|Signature|Logic|API)` bucket in the value. Default `unknown`. Combined values (`Logic/UI`, `Function Signature / API Contract`) take the first match.
 - **Verdict**: regex `Verdict:?\s*\*?\*?(Approve|Approve with Comments|Request Changes)`.
 
 Persist parsed structure inline in `tool_reviewed_prs[i]`.
@@ -70,16 +70,11 @@ Detail in [effectiveness.md](effectiveness.md). Summary:
 
 Same paths-only contract as Step 5b. Subagent has `execute` and runs `git log` / `git blame` itself; caller never ingests git output.
 
-1. Identify `fix_prs[]` from `completed_prs[]`: title or PR description contains keywords (`fix`, `bug`, `repair`, `incident`, `ICM`, `regression`) OR linked work item type is Bug.
-2. Write `fix_prs[]` (with descriptions, diff summaries) to `scratch/fix-prs.json`. Write `tool_reviewed_pr_ids` (flat int array, all known months) to `scratch/tool-reviewed-pr-ids.json`.
-3. Invoke subagent **review-stats-fn-detector** with paths only:
-   - `fix_prs_path` = `scratch/fix-prs.json`
-   - `tool_reviewed_pr_ids_path` = `scratch/tool-reviewed-pr-ids.json`
-   - `repo_path` = avd-portal working dir
-   - `cache_dir` = `metrics/review-stats/<YYYY-MM>/raw/`
-   - `output_path` = `scratch/fn-findings.json`
-4. Subagent returns ONE line (`wrote N findings to <path>`). Caller reads `scratch/fn-findings.json` -- a small JSON file -- not the chat message.
-5. Filter to `was_tool_reviewed = true AND confidence >= medium` -> these are confirmed FNs.
+1. Identify `fix_prs[]` from `completed_prs[]`: title or description matches (`fix`, `bug`, `repair`, `incident`, `ICM`, `regression`) OR linked work item is Bug.
+2. Write `fix_prs[]` to `scratch/fix-prs.json`; write `tool_reviewed_pr_ids` (flat int array, all known months) to `scratch/tool-reviewed-pr-ids.json`.
+3. Invoke subagent **review-stats-fn-detector** with paths: `fix_prs_path`, `tool_reviewed_pr_ids_path`, `repo_path` (avd-portal cwd), `cache_dir` (`metrics/review-stats/<YYYY-MM>/raw/`), `output_path` (`scratch/fn-findings.json`).
+4. Subagent returns one line (`wrote N findings to <path>`). Caller reads `scratch/fn-findings.json` directly.
+5. Filter to `was_tool_reviewed = true AND confidence >= medium` -> confirmed FNs.
 
 ## Step 7: Compute Supporting Metrics
 
@@ -104,13 +99,9 @@ From the structured records:
 
 Read [reference.md](reference.md) for JSON schema and Markdown template.
 
-1. Build `data.json` per schema. Path: `metrics/review-stats/<YYYY-MM>/data.json`.
-2. Build `report.md` per template. Path: `metrics/review-stats/<YYYY-MM>/report.md`.
-3. **Cross-month FN writes**: for each confirmed FN with `introducing_pr_month != <YYYY-MM>`:
-   - Path: `metrics/review-stats/<introducing_pr_month>/data.json`.
-   - If file exists: read, append `attributed_false_negatives[]` entry (dedup by `fix_pr_id`), recompute `false_negative_rate` if `tool_reviewed_count` is present.
-   - If file absent: skip (only update months that already have a base report) and log a warning in the current report.
-4. Print summary to user: counts, rates, list of cross-month files updated.
+1. Build `data.json` + `report.md` per schema/template at `metrics/review-stats/<YYYY-MM>/`.
+2. **Cross-month FN writes**: for each confirmed FN with `introducing_pr_month != <YYYY-MM>`, update `metrics/review-stats/<introducing_pr_month>/data.json` -- append `attributed_false_negatives[]` (dedup by `fix_pr_id`), recompute `false_negative_rate` if `tool_reviewed_count` present. Skip if absent (only update months with a base report) and log a warning in the current report.
+3. Print summary: counts, rates, list of cross-month files updated.
 
 ## Step 8.5: Emit Charts (Mermaid + HTML)
 

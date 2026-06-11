@@ -46,7 +46,7 @@ Performed by the entry prompt, then handed to this skill:
 
 ## Workflow
 
-The full step-by-step orchestration lives in [workflow.md](./workflow.md). The provider seam contract is in [providers/_index.md](./providers/_index.md).
+Orchestration entry point is [workflow.md](./workflow.md); it indexes three step files under [steps/](./steps/) (`prep.md` Steps 0–5, `analyze.md` Steps 6–7, `finalize.md` Steps 8–9). The provider seam contract is in [providers/_index.md](./providers/_index.md).
 
 **Do NOT read** [reference.md](./reference.md), [rules.md](./rules.md), or [decision.md](./decision.md) upfront. They are loaded on-demand:
 
@@ -60,23 +60,12 @@ The full step-by-step orchestration lives in [workflow.md](./workflow.md). The p
 **BEFORE any review action, create a todo list using `manage_todo_list`.**
 
 ```
-1. Read workflow.md to get steps.
-2. Create todo list with ALL steps from workflow.
-3. Execute steps ONE BY ONE, marking progress.
-4. Never skip steps or execute without todo tracking.
+1. Read workflow.md to get the orchestrator + step file index.
+2. Create todo list with ALL steps 0–9 from the Flow Summary (one todo per step / sub-step).
+3. Before each step's todo, read the matching step file (steps/prep.md / steps/analyze.md / steps/finalize.md) if not yet loaded.
+4. Execute steps ONE BY ONE, marking progress.
+5. Never skip steps or execute without todo tracking.
 ```
-
-## Review Procedure
-
-When the entry prompt invokes this skill with `prId` + registry metadata:
-
-1. **Resolve provider** (Step 0): match `pr-platform`, load `providers/{name}.md`.
-2. Read [workflow.md](./workflow.md).
-3. Create todo list with all workflow steps using `manage_todo_list`.
-4. Execute each step, marking todo as in-progress → completed.
-5. Each step writes its content into `pr-review/{prId}/sections/<NN-name>.md`; final `review.md` is assembled by terminal concat in Step 9.1.
-6. **Post PR Comment to PR** via the provider's `postComment` recipe (Step 9.2). Use the provider's documented fallback only if the primary fails or when the provider's fallback Note flags a ctx tradeoff worth taking.
-7. Return to target branch.
 
 **Key Principle**: Checkout PR branch locally; subagents do deep analysis in their own contexts and write directly to section files. Main agent never reads source files inline; main agent never reads back full subagent payloads.
 
@@ -109,7 +98,10 @@ When posting review comments to PR:
 
 ## References
 
-- [workflow.md](./workflow.md) — main orchestration (Steps 0-9).
+- [workflow.md](./workflow.md) — main orchestrator (intro + section-file model + Rules + step file index + Anti-Summarization Rule + Flow Summary).
+- [steps/prep.md](./steps/prep.md) — Steps 0–5 (provider, fetch, section scaffolding).
+- [steps/analyze.md](./steps/analyze.md) — Steps 6–7 (intent + MANDATORY parallel subagent dispatch).
+- [steps/finalize.md](./steps/finalize.md) — Steps 8–9 (verdict, assemble, post).
 - [reference.md](./reference.md) — section file templates, decision rules, review heuristics.
 - [rules.md](./rules.md) — review criteria, smell catalog (subagents).
 - [decision.md](./decision.md) — verdict gates + Action Items construction gates (main agent, Step 8).

@@ -1,6 +1,7 @@
 ---
 name: dep-audit
 description: Audit and fix npm dependency security vulnerabilities — run npm audit across all package locations, analyze root-dep upgrade vs override strategy, classify by severity, apply fixes with user approval, then verify the build and prepare handoff. Use when asked to scan a project for dependency CVEs, produce a fix plan, or update vulnerable packages.
+user-invocable: false
 ---
 
 # Dependency audit & fix

@@ -3,7 +3,7 @@ name: pr-quality-checker
 description: Check code quality - similar code search, code smell detection
 tools: ['read', 'search', 'edit']
 user-invocable: false
-model: ['Claude Haiku 4.5 (copilot)']
+model: Claude Haiku 4.5 (copilot)
 ---
 
 # PR Quality Checker
