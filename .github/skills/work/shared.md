@@ -86,7 +86,14 @@ files, edits, builds, runs UTs, audits DAP-07/08, and returns a compact summary.
   inputs:
   - `toolkit-root`: same value passed to implementer
   - `outputDir`: `tmp/work/<item-id>/`
-  - `request`: the original user request that led to this work item
+  - `request`: the original user request that led to this work item.
+    When the request contains a universal claim (`every X is …`, `all Y are
+    …`, `no Z does …`), spell out the SCOPE of that claim — which files /
+    which subsystem the claim covers — so the validator doesn't generalize
+    it across the whole repo (e.g. "every `v1.x.y` literal in the tree is
+    fictional" must say "only in `install/`, `scripts/`, `INSTALL.md`,
+    `README.md`" if other dirs intentionally carry their own version
+    literals).
   - `implementerSummary`: the verbatim summary just returned
   - `changedPaths`: file list from the implementer summary's "Files Modified" table
   - `scope`: `all-changes-since-handoff`
