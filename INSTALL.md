@@ -52,8 +52,20 @@ Copy-Item .copilot-toolkit/install/settings-snippet.jsonc .vscode/settings.json 
 # Inspect the -WhatIf output. If happy, re-run without -WhatIf, then open the
 # file and remove the leading comment block if your tooling rejects // in JSON.
 
-# 3. Commit the submodule pointer + settings.
-git add .gitmodules .copilot-toolkit .vscode/settings.json
+# 3. Copy the project-instructions starter template and fill in the
+#    {{PLACEHOLDER}} blocks. This is the system prompt loaded into every
+#    chat session, so a missing copilot-instructions.md leaves the agent
+#    without project context. The template is shipped under
+#    .copilot-toolkit/templates/ and is intentionally NOT auto-installed;
+#    every consumer fills it in by hand because the content (project
+#    scope, tech stack, MCP mapping) is consumer-specific.
+New-Item -ItemType Directory -Force -Path .github | Out-Null
+Copy-Item .copilot-toolkit/templates/copilot-instructions.template.md .github/copilot-instructions.md
+# Open .github/copilot-instructions.md and fill in every {{PLACEHOLDER}}
+# block; delete OPTIONAL sections that don't apply to this consumer.
+
+# 4. Commit the submodule pointer + settings + filled-in instructions.
+git add .gitmodules .copilot-toolkit .vscode/settings.json .github/copilot-instructions.md
 git commit -m "Add copilot-toolkit submodule (v0.1.0)"
 ```
 
@@ -65,6 +77,9 @@ git commit -m "Add copilot-toolkit submodule (v0.1.0)"
    [`README.md`](README.md#whats-in-here) under `.github/skills/`).
 3. Trigger any skill end-to-end (the workspace's own slash commands should
    route correctly).
+4. Confirm `.github/copilot-instructions.md` has no remaining
+   `{{PLACEHOLDER}}` markers (`Select-String -Pattern '{{PLACEHOLDER' .github/copilot-instructions.md`
+   should return nothing).
 
 ---
 
@@ -93,9 +108,16 @@ pwsh -File sync-bootstrap.ps1 -Tag $tag
 New-Item -ItemType Directory -Force -Path .vscode | Out-Null
 Copy-Item .copilot-toolkit/install/settings-snippet.jsonc .vscode/settings.json
 
-# 4. Commit everything.
+# 4. Copy + fill the project-instructions starter template
+#    (same as Scenario 1 step 3; see that scenario for rationale).
+New-Item -ItemType Directory -Force -Path .github | Out-Null
+Copy-Item .copilot-toolkit/templates/copilot-instructions.template.md .github/copilot-instructions.md
+# Open .github/copilot-instructions.md and fill in every {{PLACEHOLDER}}
+# block; delete OPTIONAL sections that don't apply.
+
+# 5. Commit everything.
 Remove-Item sync-bootstrap.ps1
-git add .copilot-toolkit .vscode/settings.json
+git add .copilot-toolkit .vscode/settings.json .github/copilot-instructions.md
 git commit -m "Add copilot-toolkit (sync mode, v0.1.0)"
 ```
 
@@ -138,8 +160,11 @@ git submodule add -b v0.1.0 https://github.com/test3207/copilot-toolkit.git .cop
 #    alongside the existing entries (the value is a map of path -> bool).
 
 # 3. Confirm the consumer's existing .github/copilot-instructions.md still
-#    governs the project. The toolkit does not ship a copilot-instructions.md
-#    -- it only ships skills, agents, and prompts (which are loaded on demand).
+#    governs the project. The toolkit ships a STARTER TEMPLATE at
+#    .copilot-toolkit/templates/copilot-instructions.template.md for fresh
+#    consumers (see Scenarios 1 + 2), but never writes to
+#    .github/copilot-instructions.md directly -- your existing file is
+#    untouched.
 git status .github/copilot-instructions.md
 # Expect: no change.
 
