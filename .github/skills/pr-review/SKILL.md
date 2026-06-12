@@ -22,7 +22,7 @@ When NOT to use it:
 ## Inputs
 
 - `toolkit-root` — workspace-relative path the entry prompt resolved (`.copilot-toolkit/.github` when consumed via submodule, `.github` when self-hosted in this repo). The skill threads this value to every subagent so each one can locate its `{toolkit-root}/skills/pr-review/...` references at runtime.
-- `prId` — numeric PR id (already resolved by the entry prompt via `tools/parse-input.mjs`).
+- `prId` — numeric PR id (already resolved by the entry prompt via `.copilot-toolkit/scripts/parse-input.mjs`).
 - `repo` — repo name as it appears in the consumer's `workflows/registry/index.md`.
 - Registry metadata for that repo (loaded by the entry prompt): `path`, `targetBranch`, `pr-platform`, `repo-guid` (if ADO), coding-standards list, anti-pattern allowlist.
 
@@ -39,7 +39,7 @@ When NOT to use it:
 
 Performed by the entry prompt, then handed to this skill:
 
-1. Parse the input ID / URL via `node tools/parse-input.mjs "<input>"`.
+1. Parse the input ID / URL via `node .copilot-toolkit/scripts/parse-input.mjs "<input>"`.
 2. Read `workflows/registry/index.md` to match the repo.
 3. Read `workflows/registry/<matched-repo>.md` for full metadata.
 4. Read the registry entry's `pr-platform` field (default `ado`). Load [providers/{pr-platform}.md](./providers/) — every PR-host-specific recipe (fetch, post, URL format, auto-link rules) comes from this file. The workflow body is host-agnostic.

@@ -55,10 +55,10 @@
     that exclusion (e.g. when verifying the regex itself).
 
 .EXAMPLE
-    pwsh -File tools/lint-public.ps1 -Path .github,tools
+    pwsh -File scripts/lint-public.ps1 -Path .github,scripts,templates,install,INSTALL.md,README.md
 
 .EXAMPLE
-    pwsh -File tools/lint-public.ps1 -Path dist -Exclude '*examples/private/*'
+    pwsh -File scripts/lint-public.ps1 -Path dist -Exclude '*examples/private/*'
 #>
 [CmdletBinding()]
 param(

@@ -81,7 +81,7 @@ ADO ownership = `System.AreaPath` on a representative work item.
 
 Two input modes:
 
-1. **User pastes a WI link**: extract WI id via `node tools/parse-input.mjs "<link>"` (returns `{ type: "wi", id, org, project }`). Fetch the WI:
+1. **User pastes a WI link**: extract WI id via `node .copilot-toolkit/scripts/parse-input.mjs "<link>"` (returns `{ type: "wi", id, org, project }`). Fetch the WI:
 
    ```text
    {ado-wi-server}/wit_get_work_item  id=<wiId>

@@ -22,7 +22,7 @@ When NOT to use it:
 ## Inputs
 
 - `toolkit-root` — workspace-relative path the entry prompt resolved (`.copilot-toolkit/.github` when consumed via submodule, `.github` when self-hosted in this repo). The skill threads this value to every subagent so each one can locate its `{toolkit-root}/skills/work/...` references at runtime.
-- `itemId` — numeric tracker id (already resolved by the entry prompt via `tools/parse-input.mjs`), OR `null` when the caller invoked `/work start` with no id.
+- `itemId` — numeric tracker id (already resolved by the entry prompt via `.copilot-toolkit/scripts/parse-input.mjs`), OR `null` when the caller invoked `/work start` with no id.
 - `repo` — repo name as it appears in the consumer's `workflows/registry/index.md` (resolved from the item area-path / labels, or from cwd when `itemId` is null).
 - Registry metadata for that repo (loaded by the entry prompt): `path`, `build`, `frameworks`, `coding-standards`, `feature-gating`, `kusto`, `issue-tracker` (default `ado`), `incident-source` (optional).
 
@@ -39,7 +39,7 @@ When NOT to use it:
 
 Performed by the entry prompt, then handed to this skill:
 
-1. Parse the input ID / URL via `node tools/parse-input.mjs "<input>"`.
+1. Parse the input ID / URL via `node .copilot-toolkit/scripts/parse-input.mjs "<input>"`.
 2. Read `workflows/registry/index.md` to match the repo. IF the input is a tracked-item id and no direct repo match: fetch item details via the resolved provider, match `area-path` (ADO) or `github-label` (GitHub) against registry entries.
 3. Read `workflows/registry/<matched-repo>.md` for full metadata.
 4. **Resolve issue-tracker provider** — read the entry's `issue-tracker` field (default `ado`). Load [providers/{issue-tracker}.md](./providers/) once per session — every later step's `getItem` / `createItem` / `addComment` / `linkPR` / commit-message-suffix / PR-description-link call resolves via this provider, not the workflow body.

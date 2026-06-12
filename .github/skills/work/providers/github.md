@@ -25,7 +25,7 @@ Match patterns:
 
 Return `{ id, providerHint: "github", owner, repo }`. Otherwise `null`.
 
-> `tools/parse-input.mjs` upstream version covers the public github.com pattern. Consumers using GHE register their host via the same env-gate mechanism used by ICM (`process.env.GITHUB_HOST_PATTERN`).
+> `.copilot-toolkit/scripts/parse-input.mjs` upstream version covers the public github.com pattern. Consumers using GHE register their host via the same env-gate mechanism used by ICM (`process.env.GITHUB_HOST_PATTERN`).
 
 ### `getItem(id)`
 
@@ -84,7 +84,7 @@ GitHub auto-links by writing `Closes #<itemId>` (or `Refs #<itemId>` for non-clo
 
 ### `commitMessageSuffix(itemId)`
 
-Return ` (#<itemId>)`. GitHub auto-links `#<n>` references in commit views.
+Return `(#<itemId>)`. GitHub auto-links `#<n>` references in commit views.
 
 ### `prDescriptionLink(itemId)`
 

@@ -68,7 +68,7 @@ When user runs `/pr-review review pr <prId or link>`:
 
 1. **Resolve input** (Step 0):
    - Compute `$toolkitRoot = if (Test-Path '.copilot-toolkit/.github') { '.copilot-toolkit/.github' } else { '.github' }` — every downstream skill / subagent receives this as `toolkit-root` so they can locate their own files at runtime.
-   - Run `node tools/parse-input.mjs "<input>"` to parse PR ID or URL (script ships at `.copilot-toolkit/scripts/parse-input.mjs` in submodule mode; consumers may keep a local copy at `tools/`).
+   - Run `node .copilot-toolkit/scripts/parse-input.mjs "<input>"` to parse PR ID or URL (path assumes submodule / sync mount; if you self-host the toolkit by checking it out as the workspace root, drop the `.copilot-toolkit/` prefix).
    - Read `.github/prompts/workflows/registry/index.md` (consumer-side) to match the repo.
    - Read `.github/prompts/workflows/registry/<matched-repo>.md` for full metadata.
 2. **Invoke skill `pr-review`** with: `toolkit-root: $toolkitRoot`, `prId`, matched `repo`, registry metadata (`path`, `targetBranch`, `pr-platform`, `ado-repo-server` + `repo-guid` if ADO, coding-standards list, anti-pattern allowlist).

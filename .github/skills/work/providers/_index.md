@@ -18,7 +18,7 @@ Every provider MUST implement all eight operations. Provider files render each a
 
 | Operation | Inputs | Returns | Used by |
 | --------- | ------ | ------- | ------- |
-| `parseItemUrl` | URL string | `{ id, providerHint }` or `null` | `tools/parse-input.mjs` extension hint; Step 0 input resolution |
+| `parseItemUrl` | URL string | `{ id, providerHint }` or `null` | `.copilot-toolkit/scripts/parse-input.mjs` extension hint; Step 0 input resolution |
 | `getItem` | item id | `{ id, title, body, type, parentId?, attachments[], comments[] }` | `feature.md` Step 1; `bugfix.md` Step 1 |
 | `createItem` | `{ type, title, body, parentId? }` | `{ id, url }` | `feature.md` Step 1 (no-WI branch); `shared.md` Feature Gating (lifecycle item) |
 | `addChildren` | `parentId`, `[{ title, body }]` | `[id, ...]` | `feature.md` Step 3 Split |

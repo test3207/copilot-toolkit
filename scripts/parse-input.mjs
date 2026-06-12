@@ -1,5 +1,5 @@
 // Parse user input (URL or raw ID) into structured JSON.
-// Usage: node tools/parse-input.mjs "<input>"
+// Usage: node scripts/parse-input.mjs "<input>"
 // Output: JSON { type, id, org?, project?, repoName? }
 
 const input = process.argv[2];

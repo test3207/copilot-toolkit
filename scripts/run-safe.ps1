@@ -3,9 +3,9 @@
 # pager / Read-Host / Get-Credential prompt cannot make the process hang.
 #
 # Usage:
-#   pwsh -File tools/run-safe.ps1 -Command "git --no-pager log --oneline -- src/foo.ts" -TimeoutSec 30
-#   pwsh -File tools/run-safe.ps1 -Command "git show abc123" -OutputFile raw/diff.txt -TimeoutSec 60
-#   pwsh -File tools/run-safe.ps1 -Command "az account show" -TimeoutSec 15
+#   pwsh -File scripts/run-safe.ps1 -Command "git --no-pager log --oneline -- src/foo.ts" -TimeoutSec 30
+#   pwsh -File scripts/run-safe.ps1 -Command "git show abc123" -OutputFile raw/diff.txt -TimeoutSec 60
+#   pwsh -File scripts/run-safe.ps1 -Command "az account show" -TimeoutSec 15
 #
 # What it guarantees about the child process:
 #   - PowerShell -NonInteractive: any Read-Host / Get-Credential THROWS instead of pending.

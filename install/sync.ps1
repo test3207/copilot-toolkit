@@ -22,13 +22,8 @@
       - .copilot-toolkit/             (full tree from the upstream tag, minus .git)
       - .copilot-toolkit/.sync-lock   (sha256 manifest + tag metadata)
 
-    Legacy lockfile migration: pre-v1.4.0 the lockfile lived at consumer
-    root as .copilot-toolkit.lock. If that legacy file is present on first
-    run, it is used for drift detection, then deleted after a successful
-    sync (the new in-dir .sync-lock replaces it).
-
 .PARAMETER Tag
-    Upstream release tag to pin to (e.g. v1.1.0). Required unless -Uninstall.
+    Upstream release tag to pin to (e.g. v0.1.0). Required unless -Uninstall.
 
 .PARAMETER Repo
     Upstream git URL. Defaults to https://github.com/test3207/copilot-toolkit.git.
@@ -38,17 +33,16 @@
     sparingly -- the local-edit refusal exists to catch unintended drift.
 
 .PARAMETER Uninstall
-    Remove .copilot-toolkit/ and any sync lockfile (current in-dir
-    .copilot-toolkit/.sync-lock + legacy root .copilot-toolkit.lock) from
-    the consumer working tree. Settings.json entries are NOT touched --
+    Remove .copilot-toolkit/ and the in-dir .copilot-toolkit/.sync-lock
+    from the consumer working tree. Settings.json entries are NOT touched --
     remove those by hand.
 
 .EXAMPLE
-    pwsh -File install/sync.ps1 -Tag v1.1.0
-        Initial install or upgrade to v1.1.0.
+    pwsh -File install/sync.ps1 -Tag v0.1.0
+        Initial install or upgrade to v0.1.0.
 
 .EXAMPLE
-    pwsh -File install/sync.ps1 -Tag v1.2.0 -Force
+    pwsh -File install/sync.ps1 -Tag v0.1.0 -Force
         Upgrade and discard any local edits inside .copilot-toolkit/.
 
 .EXAMPLE
@@ -73,7 +67,6 @@ $ErrorActionPreference = 'Stop'
 
 $DestDir         = '.copilot-toolkit'
 $LockFile        = Join-Path $DestDir '.sync-lock'
-$LegacyLockFile  = '.copilot-toolkit.lock'  # pre-v1.4.0 root location; migrated away
 
 function Write-Info($msg)  { Write-Host "[sync] $msg" -ForegroundColor Cyan }
 function Write-Warn2($msg) { Write-Host "[sync] $msg" -ForegroundColor Yellow }
@@ -85,12 +78,6 @@ function Invoke-Uninstall {
         Remove-Item -Recurse -Force $DestDir
     } else {
         Write-Warn2 "$DestDir not present; nothing to remove."
-    }
-    # In-dir lockfile is gone with $DestDir. Legacy root lockfile may still
-    # exist on consumers that never re-synced after v1.4.0; clean it too.
-    if (Test-Path $LegacyLockFile) {
-        Write-Info "Removing legacy $LegacyLockFile"
-        Remove-Item -Force $LegacyLockFile
     }
     Write-Info "Uninstall complete. Remove the matching keys from .vscode/settings.json by hand."
 }
@@ -158,7 +145,7 @@ if ($Uninstall) {
 }
 
 if (-not $Tag) {
-    Write-Err "Missing -Tag. Example: pwsh -File install/sync.ps1 -Tag v1.1.0"
+    Write-Err "Missing -Tag. Example: pwsh -File install/sync.ps1 -Tag v0.1.0"
     exit 2
 }
 
@@ -168,17 +155,7 @@ if ($Tag -notmatch '^v\d+\.\d+\.\d+$') {
 }
 
 # 1. Local-edit detection (only if a previous sync exists).
-#    Prefer the new in-dir lockfile; fall back to the legacy root lockfile so
-#    consumers from pre-v1.4.0 can upgrade in place.
-$activeLock = $null
-$activeLockIsLegacy = $false
-if (Test-Path $LockFile) {
-    $activeLock = $LockFile
-} elseif (Test-Path $LegacyLockFile) {
-    $activeLock = $LegacyLockFile
-    $activeLockIsLegacy = $true
-    Write-Info "Legacy lockfile detected at root ($LegacyLockFile). Will migrate to in-dir $LockFile after sync."
-}
+$activeLock = if (Test-Path $LockFile) { $LockFile } else { $null }
 
 if ($activeLock -and (Test-Path $DestDir) -and -not $Force) {
     Write-Info "Existing $activeLock found -- checking for local edits."
@@ -240,12 +217,6 @@ $header = @(
 )
 $body = $manifest | ForEach-Object { "{0}  {1}" -f $_.Sha, $_.Path }
 ($header + $body) | Set-Content -Path $LockFile -Encoding utf8
-
-# Drop the legacy root lockfile if we migrated from it this run.
-if ($activeLockIsLegacy -and (Test-Path $LegacyLockFile)) {
-    Write-Info "Removing legacy root lockfile $LegacyLockFile (migrated to $LockFile)."
-    Remove-Item -Force $LegacyLockFile
-}
 
 Write-Info "Sync complete. $($manifest.Count) files written to $DestDir."
 Write-Info "Lockfile: $LockFile ($Tag @ $commitSha)"

@@ -23,7 +23,7 @@ Match patterns:
 
 Return `{ id, providerHint: "ado", org, project }`. Otherwise `null`.
 
-`tools/parse-input.mjs` already covers these patterns and returns `type: "wi"`; treat that as the ADO provider hint.
+`.copilot-toolkit/scripts/parse-input.mjs` already covers these patterns and returns `type: "wi"`; treat that as the ADO provider hint.
 
 ### `getItem(id)`
 

@@ -36,8 +36,7 @@
 .PARAMETER LockFile
     Relative path of the sync-mode lockfile inside the consumer repo.
     Defaults to '.copilot-toolkit/.sync-lock' (the in-dir dotfile shipped
-    by v1.4.0+). If that file is absent, the legacy root location
-    '.copilot-toolkit.lock' (pre-v1.4.0) is tried as a fallback.
+    by sync mode).
 
 .EXAMPLE
     pwsh -File scripts/toolkit-check.ps1
@@ -61,8 +60,6 @@ param(
     [string] $LockFile  = '.copilot-toolkit/.sync-lock'
 )
 
-$LegacyLockFile = '.copilot-toolkit.lock'  # pre-v1.4.0 root location
-
 $ErrorActionPreference = 'Stop'
 $env:GIT_TERMINAL_PROMPT = '0'
 
@@ -77,7 +74,6 @@ if (-not (Test-Path $ConsumerRoot -PathType Container)) {
 
 $rootFull = (Resolve-Path $ConsumerRoot).Path
 $lockFull       = Join-Path $rootFull $LockFile
-$legacyLockFull = Join-Path $rootFull $LegacyLockFile
 $mountFull  = Join-Path $rootFull $MountPath
 $gmFull     = Join-Path $rootFull '.gitmodules'
 
@@ -90,9 +86,6 @@ $activeLockPath = $null
 
 if (Test-Path $lockFull -PathType Leaf) {
     $activeLockPath = $lockFull
-} elseif (Test-Path $legacyLockFull -PathType Leaf) {
-    $activeLockPath = $legacyLockFull
-    Write-Warn2 "Found legacy lockfile at $LegacyLockFile -- consumer is pre-v1.4.0. Re-sync with v1.4.0+ to migrate the lockfile inside $MountPath/."
 }
 
 if ($activeLockPath) {
@@ -127,7 +120,7 @@ elseif ((Test-Path $gmFull -PathType Leaf) -and (Test-Path $mountFull -PathType 
 
 if (-not $mode) {
     Write-Err "No copilot-toolkit consumer mount detected at '$rootFull'."
-    Write-Err "  Expected either '$LockFile' (sync mode, v1.4.0+) or legacy '$LegacyLockFile' (pre-v1.4.0) or a '$MountPath' entry in .gitmodules (submodule mode)."
+    Write-Err "  Expected either '$LockFile' (sync mode) or a '$MountPath' entry in .gitmodules (submodule mode)."
     exit 1
 }
 

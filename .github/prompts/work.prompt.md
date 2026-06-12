@@ -57,7 +57,7 @@ Where `<input>` may be:
 
 1. **Resolve input** (Step 0 of the work skill):
    - Compute `$toolkitRoot = if (Test-Path '.copilot-toolkit/.github') { '.copilot-toolkit/.github' } else { '.github' }`.
-   - Run `node tools/parse-input.mjs "<input>"` (script ships at `.copilot-toolkit/scripts/parse-input.mjs` in submodule mode; consumers may keep a local copy at `tools/`).
+   - Run `node .copilot-toolkit/scripts/parse-input.mjs "<input>"` (path assumes submodule / sync mount; if you self-host the toolkit by checking it out as the workspace root, drop the `.copilot-toolkit/` prefix).
    - Read `.github/prompts/workflows/registry/index.md` to match the repo.
    - Read `.github/prompts/workflows/registry/<matched-repo>.md` for full metadata.
 2. **Invoke skill `work`** with: `toolkit-root: $toolkitRoot`, the resolved repo, registry metadata (`path`, `pr-platform`, `ado-repo-server`, `ado-wi-server`, build commands, anti-pattern allowlist), and the raw user input.

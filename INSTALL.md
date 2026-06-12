@@ -42,7 +42,7 @@ A new repo with no existing copilot toolkit config.
 
 ```pwsh
 # 1. Add the submodule pinned to the latest release tag.
-git submodule add -b v1.4.0 https://github.com/test3207/copilot-toolkit.git .copilot-toolkit
+git submodule add -b v0.1.0 https://github.com/test3207/copilot-toolkit.git .copilot-toolkit
 
 # 2. Wire discovery in .vscode/settings.json.
 #    If the file doesn't exist, create it with the snippet contents below;
@@ -54,7 +54,7 @@ Copy-Item .copilot-toolkit/install/settings-snippet.jsonc .vscode/settings.json 
 
 # 3. Commit the submodule pointer + settings.
 git add .gitmodules .copilot-toolkit .vscode/settings.json
-git commit -m "Add copilot-toolkit submodule (v1.4.0)"
+git commit -m "Add copilot-toolkit submodule (v0.1.0)"
 ```
 
 **Verify**
@@ -83,7 +83,7 @@ files directly. Updates require re-running the sync script.
 
 ```pwsh
 # 1. Download the sync script for the target tag.
-$tag = 'v1.4.0'
+$tag = 'v0.1.0'
 Invoke-WebRequest "https://raw.githubusercontent.com/test3207/copilot-toolkit/$tag/install/sync.ps1" -OutFile sync-bootstrap.ps1
 
 # 2. Run it. Populates .copilot-toolkit/ and writes .copilot-toolkit/.sync-lock.
@@ -96,13 +96,13 @@ Copy-Item .copilot-toolkit/install/settings-snippet.jsonc .vscode/settings.json
 # 4. Commit everything.
 Remove-Item sync-bootstrap.ps1
 git add .copilot-toolkit .vscode/settings.json
-git commit -m "Add copilot-toolkit (sync mode, v1.4.0)"
+git commit -m "Add copilot-toolkit (sync mode, v0.1.0)"
 ```
 
 Bash equivalent for step 2 (Linux / macOS):
 
 ```bash
-tag='v1.4.0'
+tag='v0.1.0'
 curl -fsSL "https://raw.githubusercontent.com/test3207/copilot-toolkit/$tag/install/sync.sh" -o sync-bootstrap.sh
 bash sync-bootstrap.sh --tag "$tag"
 rm sync-bootstrap.sh
@@ -128,7 +128,7 @@ any of it.
 
 ```pwsh
 # 1. Mount the submodule (same as Scenario 1).
-git submodule add -b v1.4.0 https://github.com/test3207/copilot-toolkit.git .copilot-toolkit
+git submodule add -b v0.1.0 https://github.com/test3207/copilot-toolkit.git .copilot-toolkit
 
 # 2. Hand-merge .vscode/settings.json. Open it and add the three keys from
 #    .copilot-toolkit/install/settings-snippet.jsonc. If the consumer already
@@ -145,7 +145,7 @@ git status .github/copilot-instructions.md
 
 # 4. Commit.
 git add .gitmodules .copilot-toolkit .vscode/settings.json
-git commit -m "Mount copilot-toolkit submodule (v1.4.0)"
+git commit -m "Mount copilot-toolkit submodule (v0.1.0)"
 ```
 
 **Verify**
@@ -165,7 +165,7 @@ As Scenario 3, but mount via sync instead of submodule.
 **Steps**
 
 ```pwsh
-$tag = 'v1.4.0'
+$tag = 'v0.1.0'
 Invoke-WebRequest "https://raw.githubusercontent.com/test3207/copilot-toolkit/$tag/install/sync.ps1" -OutFile sync-bootstrap.ps1
 pwsh -File sync-bootstrap.ps1 -Tag $tag
 Remove-Item sync-bootstrap.ps1
@@ -173,7 +173,7 @@ Remove-Item sync-bootstrap.ps1
 # Hand-merge .vscode/settings.json as in Scenario 3 step 2.
 
 git add .copilot-toolkit .vscode/settings.json
-git commit -m "Mount copilot-toolkit (sync, v1.4.0)"
+git commit -m "Mount copilot-toolkit (sync, v0.1.0)"
 ```
 
 **Verify**: same as Scenario 3.
@@ -189,12 +189,12 @@ git commit -m "Mount copilot-toolkit (sync, v1.4.0)"
 git -C .copilot-toolkit fetch --tags
 git -C .copilot-toolkit tag --list 'v*' --sort=-v:refname | Select-Object -First 5
 
-# Pick a tag (example: v1.4.0) and check it out inside the submodule.
-git -C .copilot-toolkit checkout v1.4.0
+# Pick a tag (example: v0.1.0) and check it out inside the submodule.
+git -C .copilot-toolkit checkout v0.1.0
 
 # Pin the new SHA in the parent repo.
 git add .copilot-toolkit
-git commit -m "Upgrade copilot-toolkit submodule -> v1.4.0"
+git commit -m "Upgrade copilot-toolkit submodule -> v0.1.0"
 ```
 
 If you originally added the submodule with `-b <tag>`, also update
@@ -202,7 +202,7 @@ If you originally added the submodule with `-b <tag>`, also update
 tag:
 
 ```pwsh
-git config -f .gitmodules submodule..copilot-toolkit.branch v1.4.0
+git config -f .gitmodules submodule..copilot-toolkit.branch v0.1.0
 git add .gitmodules
 git commit --amend --no-edit
 ```
@@ -212,13 +212,13 @@ git commit --amend --no-edit
 ```pwsh
 # Use the previously installed script (or re-download the bootstrap script
 # for the new tag if you want the latest sync.ps1 behavior).
-pwsh -File .copilot-toolkit/install/sync.ps1 -Tag v1.4.0
+pwsh -File .copilot-toolkit/install/sync.ps1 -Tag v0.1.0
 
 # The script will REFUSE if it detects local edits inside .copilot-toolkit/.
 # To override (and discard those edits), add -Force.
 
 git add .copilot-toolkit
-git commit -m "Sync copilot-toolkit -> v1.4.0"
+git commit -m "Sync copilot-toolkit -> v0.1.0"
 ```
 
 **Verify (both modes)**
@@ -251,7 +251,6 @@ git commit -m "Remove copilot-toolkit submodule"
 pwsh -File .copilot-toolkit/install/sync.ps1 -Uninstall
 # Or manually:
 #   Remove-Item -Recurse -Force .copilot-toolkit
-#   Remove-Item .copilot-toolkit.lock -ErrorAction SilentlyContinue  # legacy pre-v1.4.0 root lockfile
 # Remove the two keys from .vscode/settings.json by hand.
 git add .copilot-toolkit .vscode/settings.json
 git commit -m "Remove copilot-toolkit (sync)"
@@ -271,7 +270,7 @@ git commit -m "Remove copilot-toolkit (sync)"
 | --- | --- | --- |
 | `/` menu doesn't show toolkit skills after install | Settings paths wrong or window not reloaded | Run `Developer: Reload Window`; verify the three settings keys point at `.copilot-toolkit/.github/skills` / `.copilot-toolkit/.github/agents` / `.copilot-toolkit/.github/prompts` (not bare `.copilot-toolkit/skills`). |
 | `git submodule update --remote` does nothing | `.gitmodules` has no `branch` entry pinned | `git config -f .gitmodules submodule..copilot-toolkit.branch vX.Y.Z` (then commit). |
-| `sync.ps1 -Tag vX.Y.Z` refuses with "local edit detected" | One or more files inside `.copilot-toolkit/` differ from the previously-synced manifest (`.copilot-toolkit/.sync-lock`, or the legacy root `.copilot-toolkit.lock` on pre-v1.4.0 consumers) | Either restore the file to its upstream content, or add `-Force` to overwrite and discard the local edit. Never edit files inside `.copilot-toolkit/` -- propose the change upstream instead. |
+| `sync.ps1 -Tag vX.Y.Z` refuses with "local edit detected" | One or more files inside `.copilot-toolkit/` differ from the previously-synced manifest (`.copilot-toolkit/.sync-lock`) | Either restore the file to its upstream content, or add `-Force` to overwrite and discard the local edit. Never edit files inside `.copilot-toolkit/` -- propose the change upstream instead. |
 | Subagent fails with "skill file not found" referencing `.github/skills/<tool>/...` | Subagent didn't receive the `toolkit-root` input from the calling prompt | Verify the consumer's prompt computes `$toolkitRoot = if (Test-Path '.copilot-toolkit/.github') { '.copilot-toolkit/.github' } else { '.github' }` at Step 0 and passes `toolkit-root: $toolkitRoot` to the subagent. |
 | Shipped slash command (`/pr-review`, `/work`, etc.) starts but no MCP tools fire | The prompt's `tools:` allowlist references server names (e.g. `ado-1`) that don't exist in the consumer's `.vscode/mcp.json` | Either rename the consumer's mcp.json entries to match the placeholder names (see "MCP server naming convention" below), or copy the prompt to the consumer's own `.github/prompts/` and adjust the `tools:` list. |
 
@@ -333,4 +332,3 @@ The consumer's registry seam (`.github/prompts/workflows/registry/<repo>.md`)
 also carries `ado-repo-server` / `ado-wi-server` fields. Set those to the
 **actual mcp.json server name** the workflow should call for that specific
 repo (it can differ per repo even when prompts share placeholders).
-

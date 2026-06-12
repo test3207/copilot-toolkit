@@ -6,13 +6,9 @@
 #   .copilot-toolkit/             full tree from the upstream tag, minus .git
 #   .copilot-toolkit/.sync-lock   sha256 manifest + tag metadata (in-dir dotfile)
 #
-# Legacy lockfile migration: pre-v1.4.0 the lockfile lived at consumer root as
-# .copilot-toolkit.lock. If present, used for drift detection on this run and
-# then deleted after a successful sync.
-#
 # Usage:
-#   bash install/sync.sh --tag v1.1.0
-#   bash install/sync.sh --tag v1.2.0 --force
+#   bash install/sync.sh --tag v0.1.0
+#   bash install/sync.sh --tag v0.1.0 --force
 #   bash install/sync.sh --uninstall
 #
 # Exit codes:
@@ -24,7 +20,6 @@ set -euo pipefail
 
 DEST_DIR='.copilot-toolkit'
 LOCK_FILE="$DEST_DIR/.sync-lock"
-LEGACY_LOCK_FILE='.copilot-toolkit.lock'  # pre-v1.4.0 root location; migrated away
 REPO_DEFAULT='https://github.com/test3207/copilot-toolkit.git'
 
 TAG=''
@@ -41,8 +36,7 @@ Options:
   --tag <vX.Y.Z>   Upstream release tag (required unless --uninstall).
   --repo <url>     Upstream git URL (default: https://github.com/test3207/copilot-toolkit.git).
   --force          Discard local edits inside .copilot-toolkit/ on re-sync.
-  --uninstall      Remove .copilot-toolkit/ and any sync lockfile (current
-                   in-dir + legacy root).
+  --uninstall      Remove .copilot-toolkit/ and the sync lockfile.
   -h | --help      Show this help.
 EOF
 }
@@ -81,12 +75,6 @@ do_uninstall() {
     else
         warn "$DEST_DIR not present; nothing to remove."
     fi
-    # In-dir lockfile is gone with $DEST_DIR. Legacy root lockfile may still
-    # exist on consumers that never re-synced after v1.4.0; clean it too.
-    if [[ -f "$LEGACY_LOCK_FILE" ]]; then
-        info "Removing legacy $LEGACY_LOCK_FILE"
-        rm -f "$LEGACY_LOCK_FILE"
-    fi
     info "Uninstall complete. Remove the matching keys from .vscode/settings.json by hand."
 }
 
@@ -96,7 +84,7 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
 fi
 
 if [[ -z "$TAG" ]]; then
-    err "Missing --tag. Example: bash install/sync.sh --tag v1.1.0"
+    err "Missing --tag. Example: bash install/sync.sh --tag v0.1.0"
     usage >&2
     exit 2
 fi
@@ -107,17 +95,8 @@ if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 # 1. Local-edit detection (only if a previous sync exists).
-#    Prefer the new in-dir lockfile; fall back to the legacy root lockfile so
-#    consumers from pre-v1.4.0 can upgrade in place.
 ACTIVE_LOCK=''
-ACTIVE_LOCK_IS_LEGACY=0
-if [[ -f "$LOCK_FILE" ]]; then
-    ACTIVE_LOCK="$LOCK_FILE"
-elif [[ -f "$LEGACY_LOCK_FILE" ]]; then
-    ACTIVE_LOCK="$LEGACY_LOCK_FILE"
-    ACTIVE_LOCK_IS_LEGACY=1
-    info "Legacy lockfile detected at root ($LEGACY_LOCK_FILE). Will migrate to in-dir $LOCK_FILE after sync."
-fi
+[[ -f "$LOCK_FILE" ]] && ACTIVE_LOCK="$LOCK_FILE"
 
 if [[ -n "$ACTIVE_LOCK" && -d "$DEST_DIR" && "$FORCE" -eq 0 ]]; then
     info "Existing $ACTIVE_LOCK found -- checking for local edits."
@@ -202,12 +181,6 @@ now_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         echo "$sha  $rel"
     done
 } >"$LOCK_FILE"
-
-# Drop the legacy root lockfile if we migrated from it this run.
-if [[ "$ACTIVE_LOCK_IS_LEGACY" -eq 1 && -f "$LEGACY_LOCK_FILE" ]]; then
-    info "Removing legacy root lockfile $LEGACY_LOCK_FILE (migrated to $LOCK_FILE)."
-    rm -f "$LEGACY_LOCK_FILE"
-fi
 
 file_count=$(grep -c '^[0-9a-f]\{64\}  ' "$LOCK_FILE" || true)
 info "Sync complete. $file_count files written to $DEST_DIR."

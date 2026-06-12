@@ -53,7 +53,7 @@ or auth prompt = silent hang.
   pending).
 - Wrap unknown-duration / external commands in `scripts/run-safe.ps1` (hard
   timeout + closed stdin + pager defang).
-  - Usage: `pwsh -File <toolkit>/scripts/run-safe.ps1 -Command "<cmd>" -TimeoutSec <n>`
+  - Usage: `pwsh -File .copilot-toolkit/scripts/run-safe.ps1 -Command "<cmd>" -TimeoutSec <n>`
   - Returns `124` on timeout (process killed).
 - Never `Start-Sleep` to wait for a previous command -- you get auto-notified when
   it completes.
@@ -146,7 +146,7 @@ If your workflow needs to parse Incident Management URLs (oncall tooling), set:
 // repeat for linux/osx
 ```
 
-This wires `tools/parse-input.mjs` (toolkit-shipped) to recognize your incident
+This wires `.copilot-toolkit/scripts/parse-input.mjs` (toolkit-shipped) to recognize your incident
 URLs without baking the host name into upstream source.
 
 ## Prompts

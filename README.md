@@ -12,8 +12,8 @@ License: MIT.
 | --- | --- |
 | `.github/skills/<tool>/SKILL.md` | Reusable skills (entry file each). VS Code default discovery picks these up when you open this repo as a workspace. |
 | `.github/agents/<name>.md` | Subagent workers used by the skills. VS Code default discovery picks these up too. |
-| `.github/prompts/<name>.prompt.md` | Thin-shim slash-command entry points (`/dep`, `/pr-review`, `/work`, `/review-stats`, `/tool-dev`, `/onboard-repo`). Each shim owns the MCP `tools:` allowlist and delegates the workflow body to the matching skill. Consumers discover these via `chat.promptFilesLocations` (see `INSTALL.md`). |
-| `scripts/` | Helper scripts (`lint-public.ps1`, `parse-input.mjs`, `run-safe.ps1`). |
+| `.github/prompts/<name>.prompt.md` | Thin-shim slash-command entry points (`/dep`, `/pr-review`, `/work`, `/tool-dev`, `/onboard-repo`). Each shim owns the MCP `tools:` allowlist and delegates the workflow body to the matching skill. Consumers discover these via `chat.promptFilesLocations` (see `INSTALL.md`). |
+| `scripts/` | Helper scripts (`lint-public.ps1`, `parse-input.mjs`, `run-safe.ps1`, `toolkit-check.ps1`). |
 | `templates/` | Starter files for new consumers (`_template.prompt.md`, `template-skill/`, `copilot-instructions.template.md`). |
 | `install/` | Install helpers (`sync.ps1`, `sync.sh`, `settings-snippet.jsonc`) for sync mode + the `.vscode/settings.json` snippet shared by both mount modes. See `INSTALL.md`. |
 
@@ -79,7 +79,7 @@ at [`install/settings-snippet.jsonc`](install/settings-snippet.jsonc).
 Short version (submodule mode):
 
 ```pwsh
-git submodule add -b v1.4.0 https://github.com/test3207/copilot-toolkit.git .copilot-toolkit
+git submodule add -b v0.1.0 https://github.com/test3207/copilot-toolkit.git .copilot-toolkit
 ```
 
 then add to the consumer's `.vscode/settings.json`:
