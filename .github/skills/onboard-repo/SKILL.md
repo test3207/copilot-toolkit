@@ -35,6 +35,7 @@ Ask the user for:
 | Skill version | `v1.0` (skill conversion of onboard-repo tool v2.0) |
 | Providers | [providers/ado.md](./providers/ado.md), [providers/github.md](./providers/github.md), [providers/generic-git.md](./providers/generic-git.md). Add a new file under `providers/` for new hosts; no workflow edits required. |
 | Subagents | None — all steps sequential / deterministic. |
+| Hand-off | Step 8 dispatches [`distill-submodule-rules`](../distill-submodule-rules/SKILL.md) to surface the submodule's own Copilot rules in the host workspace. |
 
 ## Steps
 
@@ -111,19 +112,30 @@ For non-ADO providers, leave the ADO columns empty (`-`).
 
 Run the provider's **downstreamPromptUpdates** recipe. For `ado`: audit the entry prompts that gate ADO MCP access (typically `work.prompt.md`, `pr-review.prompt.md`, any `oncall.prompt.md`) and append any required `{server}/<tool>` entries to their `tools:` allowlists if the new repo introduces a new ADO MCP server. For `github` / `generic-git`: no edits required.
 
-### 8. Commit
+### 8. Distill submodule rules
+
+VS Code only auto-loads the host workspace's root `.github/copilot-instructions.md`. If the newly mounted submodule carries its own `.github/copilot-instructions.md` (or any `.github/instructions/*.instructions.md`), the host agent will NOT see those rules and may violate the submodule's red lines.
+
+Dispatch [`distill-submodule-rules`](../distill-submodule-rules/SKILL.md) with the just-onboarded `repoName`. It writes `.github/instructions/repos-<repoName>.instructions.md` with frontmatter `applyTo: "repos/<repoName>/**"` so the submodule's hard rules auto-load whenever the agent touches a file under that path.
+
+If the submodule has no `.github/copilot-instructions.md` and no companion instructions files, the distill skill reports "nothing to distill" and writes nothing. That is the expected outcome for repos with no agent rules; continue to Step 9.
+
+### 9. Commit
 
 ```text
 feat: onboard <repoName> submodule + registry entry (provider: <provider>)
 ```
 
-### 9. Report
+Include the distilled `.github/instructions/repos-<repoName>.instructions.md` (if Step 8 produced one) in this same commit.
+
+### 10. Report
 
 Show:
 
 - Submodule path + clone URL + pinned branch.
 - Registry file path + which fields are TODO.
 - Provider used + any provider-specific caveats (e.g. "`/work` not available for `generic-git`; author a provider first").
+- Distillation output path + source-snapshot sha (or "nothing to distill" if the submodule has no agent rules).
 - Suggested next steps (fill TODOs as you work in the repo).
 
 ## Rules
@@ -138,3 +150,4 @@ Show:
 - [providers/ado.md](./providers/ado.md) — ADO provider (MCP primary + REST fallback; WI-or-area-path ownership).
 - [providers/github.md](./providers/github.md) — GitHub provider (`gh` CLI primary; CODEOWNERS-based ownership).
 - [providers/generic-git.md](./providers/generic-git.md) — fallback provider for any git remote.
+- [../distill-submodule-rules/SKILL.md](../distill-submodule-rules/SKILL.md) — host-side rule distillation invoked from Step 8.
