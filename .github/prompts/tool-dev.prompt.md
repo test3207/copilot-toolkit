@@ -7,6 +7,7 @@ tools:
   - edit
   - search
   - web
+  - browser
   - agent
   - todo
   # MCP server names below (ado-2, ado-3, ado-1, incident-1) are neutral

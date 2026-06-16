@@ -1,10 +1,14 @@
 ---
 description: "Onboard a new repo as submodule with registry entry"
 tools:
+  - vscode
+  - execute
   - read
   - edit
-  - execute
   - search
+  - web
+  - browser
+  - agent
   - todo
   # MCP server names below (ado-1, ado-2) are neutral placeholders. Configure
   # your `.vscode/mcp.json` to match — see INSTALL.md "MCP server naming

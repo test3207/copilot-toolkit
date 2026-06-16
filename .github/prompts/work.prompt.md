@@ -1,10 +1,13 @@
 ---
 description: "Work: tracked-item-driven implementation (bug fix / feature)"
 tools:
+  - vscode
+  - execute
   - read
   - edit
-  - execute
   - search
+  - web
+  - browser
   - agent
   - todo
   # MCP server names below (ado-1, ado-2, kusto-1) are neutral placeholders.

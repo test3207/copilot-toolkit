@@ -1,10 +1,13 @@
 ---
 description: "PR Review: review pr <prId> | my prs"
 tools:
+  - vscode
+  - execute
   - read
   - edit
-  - execute
   - search
+  - web
+  - browser
   - agent
   - todo
   # MCP server names below (ado-1, ado-2, incident-1, kusto-1) are neutral
