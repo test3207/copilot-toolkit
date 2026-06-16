@@ -20,7 +20,8 @@
 #   | false          | true                     | Inaccessible (don't do)   |
 #
 # Tool groups (same as prompt files):
-#   vscode, execute, read, edit, search, web, agent, todo
+#   vscode, execute, read, edit, search, web, browser, agent, todo
+#   (browser = experimental, gated by `workbench.browser.enableChatTools`; org-managed, may be unavailable)
 #
 # MCP server tools (same syntax as prompt files):
 #   <server>/*        (all tools from server)

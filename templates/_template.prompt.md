@@ -12,7 +12,8 @@
 # Tools - array syntax (preferred):
 #
 #   Built-in tool groups:
-#     vscode, execute, read, edit, search, web, agent, todo
+#     vscode, execute, read, edit, search, web, browser, agent, todo
+#     (browser = experimental, gated by `workbench.browser.enableChatTools`; org-managed, may be unavailable)
 #
 #   Specific built-in tools:
 #     execute/runInTerminal, read/terminalLastCommand, fetch, codebase, etc.
@@ -22,7 +23,7 @@
 #     <server>/<tool>      (specific tool)
 #
 #   Examples:
-#     All built-in:        tools: ['vscode', 'execute', 'read', 'edit', 'search', 'web', 'agent', 'todo']
+#     All built-in:        tools: ['vscode', 'execute', 'read', 'edit', 'search', 'web', 'browser', 'agent', 'todo']
 #     Subset:              tools: ['read', 'edit', 'execute']
 #     With MCP:            tools: ['read', 'edit', 'ado-repo/*']
 #     Mixed:               tools: ['vscode', 'execute', '<server-name>/wiki_get_page']
@@ -213,9 +214,9 @@
 #   and let the agent read_file on demand. This avoids wasting context tokens.
 #
 description: Template prompt
-tools: ['vscode', 'execute', 'read', 'edit', 'search', 'web', 'agent', 'todo']
+tools: ['vscode', 'execute', 'read', 'edit', 'search', 'web', 'browser', 'agent', 'todo']
 # Uncomment to add MCP servers:
-# tools: ['vscode', 'execute', 'read', 'edit', 'search', 'web', 'agent', 'todo', '<ado-server>/*', 'icm/*']
+# tools: ['vscode', 'execute', 'read', 'edit', 'search', 'web', 'browser', 'agent', 'todo', '<ado-server>/*', 'icm/*']
 ---
 
 Your task: ${input:task:describe the task}.
