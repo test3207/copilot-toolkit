@@ -4,7 +4,7 @@ Provider modules decouple `pr-review` from any single PR host. The workflow is p
 
 ## How the main agent uses this
 
-1. **Resolve provider** (workflow Step 1): read the matched registry entry's `pr-platform` field. If missing, default to `ado` (back-compat). Then read `providers/{pr-platform}.md`.
+1. **Resolve provider** (workflow Step 1): read `repoContext.pr-platform` (from the matched registry entry, or derived from the git remote in derive mode). If missing, default to `ado` (back-compat). Then read `providers/{pr-platform}.md`.
 2. **Treat the provider file as a contract**: it MUST expose the sections listed in the [Provider Contract](#provider-contract) below. Run the recipe under each section verbatim.
 3. **Inject derived values into subagents**: the workflow Step 7 dispatch passes `fileLinkTemplate` and `forbiddenAutoLinkPatterns` (both built from the provider file + Step 1 PR response) to every subagent. Subagents do NOT know which platform is in use.
 

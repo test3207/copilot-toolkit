@@ -1,6 +1,6 @@
 # PR Review Rules
 
-Quick reference for PR review criteria, code smells, and AVD Portal-specific rules.
+Quick reference for PR review criteria, code smells, and consumer-gated rules.
 
 ## PR Metadata Checklist
 
@@ -110,7 +110,11 @@ Quick rule: For each early-return guard, list EVERY side effect it skips. Then c
 
 ---
 
-## AVD Portal Specific Rules
+## Consumer-Specific Rules (gated)
+
+Apply the rules in this section ONLY when the reviewed repo declares them. For an arbitrary repo, generic style/host rules come from the consumer's `coding-standards` files (registry list, or `.github/pr-review.json` in derive mode) — NOT from here. Language-specific anti-patterns come from the matching [`anti-patterns/lang/<language>.md`](anti-patterns/index.md#language-packs) pack.
+
+### AVD Portal (registry id `avd-portal`) — skip for other repos
 
 | Rule | Description | Action |
 | ---- | ----------- | ------ |
@@ -119,15 +123,9 @@ Quick rule: For each early-return guard, list EVERY side effect it skips. Then c
 | Accessibility | aria-label on interactive elements | ⚠️ Add if missing |
 | Import Order | Don't change existing import order (MerlinBot enforces) | ⚠️ Revert changes |
 
-### KO / React Framework Boundaries (AVD Portal only)
+### KO / React framework boundaries
 
-The portal has two coexisting frameworks: Knockout (`Client/Shared/`, `Client/<blade>/`, legacy) and React (`Client/React/`, new). Treat them as separate runtimes.
-
-| Rule | Description | Action |
-| ---- | ----------- | ------ |
-| No cross-framework file sharing | Framework limitation: a `.ts` file cannot be imported by BOTH KO and React code (different build/module pipelines, different bases). "Extract a shared constant/util into a common file used by both sides" does NOT compile. | ❌ Flag any PR that imports a React-side file from KO code or vice versa. Acceptable patterns: (a) duplicate the constant on each side and add a brief comment linking the twin; (b) move the value into a runtime source both sides already consume (resource file, server-served config, ECS flag). |
-| Unit tests: React required, KO not required | New / changed **React** code (`Client/React/**`) MUST include unit tests. KO code (`Client/Shared/**`, `Client/<blade>/**` except `Client/React/`) does NOT require UT — the legacy framework has no UT harness in this repo. | ❌ React change with no test → request tests. ✅ KO-only change with no test → do not flag (mention only if the author claims "tests not applicable" so the reason is recorded). For mixed PRs, scope the UT requirement to the React files only. |
-| Parallel KO/React implementations | When the same feature exists in both, divergence is expected — they are independent codepaths. | Only flag if the LOGIC diverges in a user-visible way (different validation, different defaults). Pure structural difference is fine. |
+Moved to the TypeScript/React language pack — see [anti-patterns/lang/typescript-react.md](anti-patterns/lang/typescript-react.md) (TSR-01 cross-framework file sharing, TSR-02 React UT gap, TSR-03 parallel KO/React divergence). That pack loads automatically when the diff is detected as TypeScript/React, so these apply to any KO+React repo — not just the AVD Portal.
 
 ---
 

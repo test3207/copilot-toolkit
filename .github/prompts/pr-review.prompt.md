@@ -72,9 +72,14 @@ When user runs `/pr-review review pr <prId or link>`:
 1. **Resolve input** (Step 0):
    - Compute `$toolkitRoot = if (Test-Path '.copilot-toolkit/.github') { '.copilot-toolkit/.github' } else { '.github' }` — every downstream skill / subagent receives this as `toolkit-root` so they can locate their own files at runtime.
    - Run `node .copilot-toolkit/scripts/parse-input.mjs "<input>"` to parse PR ID or URL (path assumes submodule / sync mount; if you self-host the toolkit by checking it out as the workspace root, drop the `.copilot-toolkit/` prefix).
-   - Read `.github/prompts/workflows/registry/index.md` (consumer-side) to match the repo.
-   - Read `.github/prompts/workflows/registry/<matched-repo>.md` for full metadata.
-2. **Invoke skill `pr-review`** with: `toolkit-root: $toolkitRoot`, `prId`, matched `repo`, registry metadata (`path`, `targetBranch`, `pr-platform`, `ado-repo-server` + `repo-guid` if ADO, coding-standards list, anti-pattern allowlist).
+   - **Registry-first**: read `.github/prompts/workflows/registry/index.md` (consumer-side) and try to match the repo. If matched, read `.github/prompts/workflows/registry/<matched-repo>.md` for full metadata — this is `repoContext` (registry mode; behaves exactly as before).
+   - **Derive-fallback** (ONLY when no registry index exists, or no entry matches): build `repoContext` at runtime instead of stopping. This lets a consumer review a PR in its own single repo without authoring a registry entry.
+     1. `node .copilot-toolkit/scripts/derive-repo-context.mjs "$(git --no-pager remote get-url origin)"` → `{ platform, org/project/repoName (ADO) | owner/repoName (GitHub/GitLab) }`. Set `pr-platform = platform` and `repo = repoName`. If `platform == unknown` (no `origin`, or unsupported host), STOP and ask the user to add a registry entry or a `.github/pr-review.json`.
+     2. Set `path = .` (the workspace root IS the repo). `targetBranch` is taken from the PR object inside the skill (Step 1), not needed up front.
+     3. Read optional consumer file `.github/pr-review.json` (repo root) for the non-derivable fields + overrides — see [SKILL.md](../skills/pr-review/SKILL.md) → *Optional `.github/pr-review.json`* for the schema. Any present field augments/overrides the derived values; an absent file means pure defaults.
+     4. If `platform == ado` and no `repo-guid` was supplied, the skill resolves it via the provider's "get repo by name" recipe using the configured `ado-repo-server` (else the first ADO MCP server).
+   - Both modes yield one `repoContext` object of the same shape the skill consumes.
+2. **Invoke skill `pr-review`** with: `toolkit-root: $toolkitRoot`, `prId`, and `repoContext` (registry metadata OR derived): `path`, `targetBranch`, `pr-platform`, `ado-repo-server` + `repo-guid` if ADO, coding-standards list (registry list when present; else language-autodetected — see SKILL.md), anti-pattern allowlist.
 3. Follow the skill's [SKILL.md](../skills/pr-review/SKILL.md) — it owns the workflow (Steps 0-9), provider seam, subagent dispatch, and PR-comment assembly.
 
 ## my prs Command

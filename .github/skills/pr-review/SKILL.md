@@ -12,19 +12,19 @@ Review a pull request end-to-end. Host-agnostic body; PR-host-specific recipes (
 
 - The caller says "review pr <id>", "review this PR", "check PR !123", etc.
 - The caller's entry prompt has set up the MCP tool allowlist (this skill itself declares no `tools`; the consuming prompt owns the allowlist).
-- The consumer has a registry entry for the repo containing a `pr-platform` field (`ado` / `github` / future hosts). If missing, default to `ado` for back-compat.
+- The repo context resolves either way: a registry entry matched it (**registry mode**), OR the entry prompt derived it from the git remote + optional `.github/pr-review.json` (**derive mode**). Both yield a `repoContext` with a `pr-platform` field (defaults to `ado` for back-compat).
 
 When NOT to use it:
 
 - The caller wants to list their open PRs (that lives in the consumer's entry prompt — this skill only handles `review pr <id>`).
-- The repo is not present in the consumer's registry — ask the caller to onboard it via `/onboard-repo` first.
+- Neither resolution path produced a repo context — the git remote host is unsupported (`platform == unknown`) AND no registry entry / `.github/pr-review.json` exists. Ask the caller to add one.
 
 ## Inputs
 
 - `toolkit-root` — workspace-relative path the entry prompt resolved (`.copilot-toolkit/.github` when consumed via submodule, `.github` when self-hosted in this repo). The skill threads this value to every subagent so each one can locate its `{toolkit-root}/skills/pr-review/...` references at runtime.
 - `prId` — numeric PR id (already resolved by the entry prompt via `.copilot-toolkit/scripts/parse-input.mjs`).
-- `repo` — repo name as it appears in the consumer's `workflows/registry/index.md`.
-- Registry metadata for that repo (loaded by the entry prompt): `path`, `targetBranch`, `pr-platform`, `repo-guid` (if ADO), coding-standards list, anti-pattern allowlist.
+- `repo` — repo name (from the matched registry entry in registry mode, or `repoName` from the derived git remote in derive mode).
+- `repoContext` — the metadata bundle the entry prompt resolved, identical shape in both modes: `path`, `targetBranch`, `pr-platform`, `ado-repo-server` + `repo-guid` (if ADO), coding-standards list (registry list, or language-autodetected in derive mode), anti-pattern allowlist. See [Input Resolution (Step 0)](#input-resolution-step-0) for how each field is filled.
 
 ## Quick Reference
 
@@ -37,12 +37,32 @@ When NOT to use it:
 
 ## Input Resolution (Step 0)
 
-Performed by the entry prompt, then handed to this skill:
+Performed by the entry prompt, then handed to this skill. Two modes, one output shape (`repoContext`):
 
 1. Parse the input ID / URL via `node .copilot-toolkit/scripts/parse-input.mjs "<input>"`.
-2. Read `workflows/registry/index.md` to match the repo.
-3. Read `workflows/registry/<matched-repo>.md` for full metadata.
-4. Read the registry entry's `pr-platform` field (default `ado`). Load [providers/{pr-platform}.md](./providers/) — every PR-host-specific recipe (fetch, post, URL format, auto-link rules) comes from this file. The workflow body is host-agnostic.
+2. **Registry-first**: read `workflows/registry/index.md` and try to match the repo. If matched, read `workflows/registry/<matched-repo>.md` for full metadata → `repoContext` (registry mode; unchanged behavior).
+3. **Derive-fallback** (only when no registry index exists, or no entry matches): build `repoContext` at runtime — `node .copilot-toolkit/scripts/derive-repo-context.mjs "$(git --no-pager remote get-url origin)"` for `{ platform, org/project/repoName | owner/repoName }`; `path = .`; merge any [`.github/pr-review.json`](#optional-githubpr-reviewjson) fields; auto-detect coding-standards / anti-pattern language packs from the diff (see [steps/analyze.md](./steps/analyze.md) Step 6). If `platform == unknown` and no config file supplies one, STOP.
+4. Read `repoContext.pr-platform` (default `ado`). Load [providers/{pr-platform}.md](./providers/) — every PR-host-specific recipe (fetch, post, URL format, auto-link rules) comes from this file. The workflow body is host-agnostic.
+
+## Optional `.github/pr-review.json`
+
+A consumer-owned file at the **reviewed repo's** root, used only in derive mode to supply the bits a git remote cannot reveal (and to override derived defaults). All fields optional; absent file = pure derivation + defaults. Registry mode ignores it (the registry entry wins).
+
+```jsonc
+{
+  "pr-platform": "ado",            // override the derived platform if needed
+  "ado-repo-server": "ado-1",      // MCP logical server name for ADO repo ops (not derivable)
+  "repo-guid": "<guid>",            // skip the REST "get repo by name" lookup if known
+  "resource-guid": "<guid>",        // sovereign-cloud resource id (not derivable)
+  "tenant": "<tenant-guid>",        // sovereign-cloud tenant (not derivable)
+  "target-branch": "main",          // override; normally taken from the PR object
+  "coding-standards": ["common.md", "typescript.md"],  // override language autodetect
+  "anti-pattern-allowlist": ["semantic.md", "control-flow.md"],  // restrict groups
+  "pr-template": ".github/pull_request_template.md"   // enable template checks
+}
+```
+
+Any present field augments/overrides the corresponding derived value. The schema mirrors the registry entry keys so registry mode and derive mode stay interchangeable.
 
 ## Workflow
 

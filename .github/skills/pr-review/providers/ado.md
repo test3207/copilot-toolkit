@@ -4,16 +4,25 @@ Recipes for reviewing PRs hosted on Azure DevOps (`dev.azure.com` / `<org>.visua
 
 ## Registry fields required
 
-The matched registry entry MUST include:
+The `repoContext` (from a matched registry entry, OR derived in derive mode) MUST resolve these:
 
 | Field | Example | Notes |
 | --- | --- | --- |
-| `repo-guid` | `<repo-guid>` | The repository GUID (NOT the name). Required for both MCP `repositoryId` and REST URLs. |
-| `ado-repo-server` | `<ado-repo-server-name>` | Logical MCP server name (must match a `.vscode/mcp.json` entry). The primary path for `getPrInfo` / `getThreads` / `postComment` is MCP; REST is fallback. |
-| `ado-repo` | `org: <org>, project: <project>` | Web URL needs the repo NAME, fetched from `getPrInfo`. |
-| `ado-resource-guid` | `499b84ac-1321-427f-aa17-267ca6975798` | Resource ID for `az account get-access-token --resource ...`. Used by the REST fallback only. Defaults to the well-known ADO public resource GUID; override only for sovereign clouds. |
+| `repo-guid` | `<repo-guid>` | The repository GUID (NOT the name). Required for both MCP `repositoryId` and REST URLs. In **derive mode** it is not in the git remote — resolve it once from `repoName` (see *Resolving repo identity in derive mode* below). |
+| `ado-repo-server` | `<ado-repo-server-name>` | Logical MCP server name (must match a `.vscode/mcp.json` entry). The primary path for `getPrInfo` / `getThreads` / `postComment` is MCP; REST is fallback. In derive mode, read from `.github/pr-review.json`; else default to the first ADO MCP server in the allowlist. |
+| `ado-repo` | `org: <org>, project: <project>` | Web URL needs the repo NAME, fetched from `getPrInfo`. In derive mode, `org`/`project` come from the derived git remote. |
+| `ado-resource-guid` | `499b84ac-1321-427f-aa17-267ca6975798` | Resource ID for `az account get-access-token --resource ...`. Used by the REST fallback only. Defaults to the well-known ADO public resource GUID; override only for sovereign clouds (registry `ado-resource-guid` or `.github/pr-review.json` `resource-guid`). |
 
 If `ado-resource-guid` is omitted, use `499b84ac-1321-427f-aa17-267ca6975798` (public ADO).
+
+### Resolving repo identity in derive mode
+
+When there is no registry entry and `.github/pr-review.json` did not supply `repo-guid`, resolve it once before `getPrInfo`:
+
+- Primary (MCP): `repo_get_repo_by_name_or_id` on the `{ado-repo-server}` server with `project={project}`, `repositoryNameOrId={repoName}` → take `.id` as `repoGuid` and `.name` as `repoNameForLinks`.
+- Fallback (REST): `GET https://{org}.visualstudio.com/{project}/_apis/git/repositories/{repoName}?api-version=7.1` with the same bearer token as below → `.id` / `.name`.
+
+In registry mode this step is skipped (the entry already carries `repo-guid`).
 
 ## getPrInfo
 

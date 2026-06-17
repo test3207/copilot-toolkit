@@ -22,7 +22,7 @@ You will receive:
 - **Changed files**: list of modified files with diff content
 - **Change summary**: brief description of what was changed
 - **Repo path**: working tree location
-- **Coding-standards files to load**: list from registry (e.g. `common.md`, `typescript.md`)
+- **Coding-standards files to load**: list from the registry entry, or language-autodetected in derive mode (e.g. `common.md`, `typescript.md`)
 
 ## File Reference URL Rule
 

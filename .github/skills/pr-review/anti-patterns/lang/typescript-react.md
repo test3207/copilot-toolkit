@@ -1,8 +1,10 @@
-# Knockout Reactivity Patterns
+# TypeScript / React language pack
 
-Patterns triggered by Knockout.js observable/computed/subscription changes.
+Anti-patterns specific to TypeScript / React / Knockout repositories. This is a **language pack**: it loads only when the diff is detected as TypeScript/React (see [index.md → Language Packs](../index.md#language-packs)). On C#/Python/other repos it no-ops.
 
-Read [Global Detection Rules](index.md#global-detection-rules) before applying these.
+Read [Global Detection Rules](../index.md#global-detection-rules) before applying these.
+
+The Knockout reactivity patterns (BAP-06/10/11) trigger only on `ko.computed` / `ko.pureComputed` / `ko.subscribe` usage; skip them for React-only or non-KO TypeScript repos.
 
 ---
 
@@ -90,3 +92,43 @@ this.fullName = ko.computed(() => {
     return name;
 });
 ```
+
+---
+
+## TSR-01: Cross-Framework File Sharing
+
+**Severity**: High
+**Applies when**: The repo runs both Knockout (legacy) and React (new) as separate runtimes, and a PR imports a file across the boundary.
+
+**What looks safe**: "Extract a shared constant/util into a common `.ts` file used by both KO and React code."
+**What breaks**: A single `.ts` file cannot be imported by BOTH KO and React code — different build/module pipelines and module bases mean the shared import does not compile.
+
+**Detection**: Flag any PR that imports a React-side file from KO code or vice versa.
+
+**Acceptable patterns**: (a) duplicate the constant on each side with a brief comment linking the twin; (b) move the value into a runtime source both sides already consume (resource file, server-served config, feature flag).
+
+---
+
+## TSR-02: React Unit-Test Gap (KO exempt)
+
+**Severity**: Medium
+**Applies when**: A PR adds/changes React code in a repo that also carries a legacy KO framework with no UT harness.
+
+**What looks safe**: New code with no tests, "matching the legacy KO code's no-test convention."
+**What breaks**: React code is testable and expected to ship tests; silently skipping them erodes coverage on the new framework.
+
+**Detection**: New / changed **React** files (the repo's React root, e.g. `Client/React/**`) MUST include unit tests. KO-only changes (legacy paths) do NOT require UT. For mixed PRs, scope the UT requirement to the React files only.
+
+**Action**: React change with no test → request tests. KO-only change with no test → do not flag (note only if the author claims "tests N/A" so the reason is recorded).
+
+---
+
+## TSR-03: Parallel KO/React Divergence
+
+**Severity**: Medium
+**Applies when**: The same feature exists in both KO and React and a PR changes one side.
+
+**What looks safe**: Divergence between the two implementations.
+**What breaks**: They are independent codepaths; structural difference is expected, but a **logic** divergence (different validation, different defaults) is a user-visible bug.
+
+**Detection**: Only flag if the LOGIC diverges in a user-visible way. Pure structural difference is fine. Do NOT raise DRY/duplicate-code findings across the KO↔React boundary — code cannot be shared.

@@ -7,11 +7,16 @@ Sourced from [workflow.md](../workflow.md). Step 6 is main-agent inline; Step 7 
 1. Read PR description, extract purpose + linked work items
 2. Identify the problem being solved and expected behavior
 3. Determine **Change Type**: Config / UI / Signature / Logic / API
-4. **Anti-pattern trigger scan** (lightweight, no source-file reads): from the file list + diff stats only, decide which anti-pattern group files each subagent should load:
-   - `IF diff changes shared function behavior/signature/defaults OR adds field to a serialized resource model -> semantic.md`
-   - `IF diff restructures control flow / adds guards / multiple params on shared component call -> control-flow.md`
-   - `IF diff touches ko.computed/pureComputed/subscribe -> knockout.md`
-   - `IF diff adds async ops / new enum values -> async-types.md`
+4. **Anti-pattern trigger scan + language detection** (lightweight, no source-file reads): from the file list + diff stats only, decide which group files each subagent should load.
+   - Core groups (concern-based, language-agnostic):
+     - `IF diff changes shared function behavior/signature/defaults OR adds field to a serialized resource model -> semantic.md`
+     - `IF diff restructures control flow / adds guards / multiple params on shared component call -> control-flow.md`
+     - `IF diff adds async ops / new enum values -> async-types.md`
+   - Language packs (by changed-file extension; see `anti-patterns/index.md` -> Language Packs):
+     - `IF diff has .ts/.tsx/.js/.jsx -> lang/typescript-react.md` (its KO patterns BAP-06/10/11 apply only if the diff touches `ko.computed`/`pureComputed`/`subscribe`)
+     - `.cs -> lang/csharp.md`, `.py -> lang/python.md` once those packs exist (no-op until shipped)
+   - **Resolution precedence**: an explicit `anti-pattern-allowlist` from the registry entry / `.github/pr-review.json` wins (registry mode, unchanged); otherwise auto-detect from the diff (derive mode). A mixed-language diff loads every matching pack.
+   - **Coding-standards list**: in registry mode pass the registry `coding-standards` list through unchanged. In derive mode (no list), auto-detect the same way: `common.md` always, plus the per-language file (`typescript.md` for `.ts/.tsx/.js/.jsx`, `csharp.md` for `.cs`). Subagents prepend `{toolkit-root}/skills/coding-standards/`.
 
 Write `pr-review/{prId}/sections/10-intent.md`:
 
@@ -57,7 +62,7 @@ Repo path: {registry.path}
 Target branch: {targetBranch}
 Changed files: see tmp/pr-{prId}-diff.txt
 Anti-pattern groups to load: {list of file paths from Step 6 scan}
-Repo coding-standards: {list from registry}
+Repo coding-standards: {list from registry, or language-autodetected in derive mode -- Step 6}
 
 Output contract: WRITE full analysis to pr-review/{prId}/sections/{file}; RETURN ONLY the compact summary your agent file specifies.
 ```

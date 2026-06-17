@@ -4,13 +4,13 @@ Recipes for reviewing PRs hosted on GitHub (`github.com` / GHES). Prefers `gh` C
 
 ## Registry fields required
 
-The matched registry entry MUST include:
+The `repoContext` (from a matched registry entry, OR derived in derive mode) MUST resolve these:
 
 | Field | Example | Notes |
 | --- | --- | --- |
-| `github-owner` | `octocat` | The repo owner (user or org). |
-| `github-repo` | `hello-world` | The repo short name. |
-| `github-host` | `github.com` | Optional. Defaults to `github.com`; override for GHES. |
+| `github-owner` | `octocat` | The repo owner (user or org). In **derive mode** this is the `owner` parsed from the git remote. |
+| `github-repo` | `hello-world` | The repo short name. In derive mode this is the derived `repoName`. |
+| `github-host` | `github.com` | Optional. Defaults to `github.com`; override for GHES (registry `github-host` or `.github/pr-review.json`). |
 
 `gh` CLI MUST be authenticated for the host (`gh auth status` must show `Logged in`). If not, instruct the user to run `gh auth login` — do not attempt interactive auth from the agent.
 

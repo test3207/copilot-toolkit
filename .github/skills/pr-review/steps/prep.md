@@ -4,9 +4,11 @@ Sourced from [workflow.md](../workflow.md). Main agent runs these sequentially.
 
 ## Step 0: Resolve provider
 
-Read the matched registry entry's `pr-platform` field. If missing, default to `ado` (back-compat). Read `providers/{pr-platform}.md` -- this provider file defines `getPrInfo`, `getThreads`, `fileLinkTemplate`, `autoLinkForbiddenPatterns`, and `postComment` recipes used by Steps 1, 2, 5, 7, 9.1b, and 9.2 below.
+Read `repoContext.pr-platform` (from the matched registry entry in registry mode, or the derived value in derive mode). If missing, default to `ado` (back-compat). Read `providers/{pr-platform}.md` -- this provider file defines `getPrInfo`, `getThreads`, `fileLinkTemplate`, `autoLinkForbiddenPatterns`, and `postComment` recipes used by Steps 1, 2, 5, 7, 9.1b, and 9.2 below.
 
 If `providers/{pr-platform}.md` does not exist, STOP and ask the user to author it per `providers/_index.md`.
+
+**Derive mode only**: if `repoContext` came from git-remote derivation and the provider needs an identity the remote did not supply (e.g. ADO `repo-guid`), run the provider's identity-resolution recipe now (ADO: *Resolving repo identity in derive mode* in `providers/ado.md`). In registry mode the entry already carries these, so skip.
 
 ## Step 1: Get PR Info
 
