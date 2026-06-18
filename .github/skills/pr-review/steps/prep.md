@@ -10,6 +10,8 @@ If `providers/{pr-platform}.md` does not exist, STOP and ask the user to author 
 
 **Derive mode only**: if `repoContext` came from git-remote derivation and the provider needs an identity the remote did not supply (e.g. ADO `repo-guid`), run the provider's identity-resolution recipe now (ADO: *Resolving repo identity in derive mode* in `providers/ado.md`). In registry mode the entry already carries these, so skip.
 
+**Preflight + access method**: run `node .copilot-toolkit/scripts/preflight.mjs --platform {pr-platform} --mcp-configured <true if repoContext has an ado-repo-server, else false>` (the entry prompt may have already done this and passed the result). If the report's `blocking` is non-empty (node / git / the platform credential `az` or `gh` missing) STOP and surface its `remediation` -- there is no offline mode. Resolve the provider access method (`ado-access` / `gh-access`) = explicit `.github/pr-review.json` override, else the report's `access.recommended`. Steps 1, 2, and 9 run the recipe variant for the resolved method. See `providers/{pr-platform}.md` -> `accessMethods`.
+
 ## Step 1: Get PR Info
 
 Run the **getPrInfo** recipe from `providers/{pr-platform}.md`. Extract the standard `prInfo` object (fields documented in `providers/_index.md`). Skip the review if `state` is not `active`.

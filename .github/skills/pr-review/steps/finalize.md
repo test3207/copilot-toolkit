@@ -74,7 +74,9 @@ IF either check fails -> STOP. Edit the offending section file(s) directly with 
 
 ### 9.2 Post PR Comment
 
-Run the **postComment** recipe from `providers/{pr-platform}.md`. Each provider documents its own primary path (MCP-first for providers that have an MCP server, e.g. ADO; CLI-first for providers without, e.g. GitHub `gh`) and a fallback. Use the documented fallback only if the primary fails for an auth / tenant / availability reason, or when the provider's fallback Note flags a ctx tradeoff worth taking.
+Run the **postComment** recipe for the access method resolved in Step 0 (from `providers/{pr-platform}.md`):
+
+- `mcp` / `cli` / `rest`: post via that method's recipe. For `mcp`, fall through to the REST recipe only if the call fails for an auth / tenant / availability reason, or when the provider's Note flags a ctx tradeoff worth taking.
 
 ### 9.3 Return to develop
 

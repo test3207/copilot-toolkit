@@ -43,6 +43,7 @@ Performed by the entry prompt, then handed to this skill. Two modes, one output 
 2. **Registry-first**: read `workflows/registry/index.md` and try to match the repo. If matched, read `workflows/registry/<matched-repo>.md` for full metadata → `repoContext` (registry mode; unchanged behavior).
 3. **Derive-fallback** (only when no registry index exists, or no entry matches): build `repoContext` at runtime — `node .copilot-toolkit/scripts/derive-repo-context.mjs "$(git --no-pager remote get-url origin)"` for `{ platform, org/project/repoName | owner/repoName }`; `path = .`; merge any [`.github/pr-review.json`](#optional-githubpr-reviewjson) fields; auto-detect coding-standards / anti-pattern language packs from the diff (see [steps/analyze.md](./steps/analyze.md) Step 6). If `platform == unknown` and no config file supplies one, STOP.
 4. Read `repoContext.pr-platform` (default `ado`). Load [providers/{pr-platform}.md](./providers/) — every PR-host-specific recipe (fetch, post, URL format, auto-link rules) comes from this file. The workflow body is host-agnostic.
+5. **Preflight + access method**: run `node .copilot-toolkit/scripts/preflight.mjs --platform {pr-platform} --mcp-configured <ado-repo-server present?>`. Resolve the provider access method (`ado-access` / `gh-access`) = `.github/pr-review.json` override else the report's `access.recommended`. A missing hard dep (node / git, or the platform credential `az`/`gh`) STOPS with remediation -- there is no offline mode. See [providers/{pr-platform}.md](./providers/) → `accessMethods`.
 
 ## Optional `.github/pr-review.json`
 
@@ -52,6 +53,7 @@ A consumer-owned file at the **reviewed repo's** root, used only in derive mode 
 {
   "pr-platform": "ado",            // override the derived platform if needed
   "ado-repo-server": "ado-1",      // MCP logical server name for ADO repo ops (not derivable)
+  "ado-access": "auto",            // auto|mcp|rest (GitHub: gh-access auto|cli|rest) — override the preflight-resolved access method
   "repo-guid": "<guid>",            // skip the REST "get repo by name" lookup if known
   "resource-guid": "<guid>",        // sovereign-cloud resource id (not derivable)
   "tenant": "<tenant-guid>",        // sovereign-cloud tenant (not derivable)

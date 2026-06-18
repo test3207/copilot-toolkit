@@ -24,6 +24,23 @@ When there is no registry entry and `.github/pr-review.json` did not supply `rep
 
 In registry mode this step is skipped (the entry already carries `repo-guid`).
 
+## accessMethods
+
+`ado-access` (a `repoContext` field; default `auto`) selects how this provider talks to ADO. Workflow Step 0 resolves it after running the preflight doctor (`scripts/preflight.mjs --platform ado --mcp-configured <true|false>`).
+
+An authenticated `az` is **required** for ADO review -- the `rest` transport uses its bearer token, and the `mcp` server's `azure-identity` auth relies on the same sign-in. If `az` is missing or not signed in, preflight reports it as `blocking` and Step 0 STOPS with remediation. **There is no offline mode.**
+
+| Method | Selected when | Transport |
+| --- | --- | --- |
+| `mcp` | `ado-repo-server` is configured (registry entry or `.github/pr-review.json`) AND that server is in the tool allowlist | `repo_*` MCP tools on `{ado-repo-server}` |
+| `rest` | no MCP server configured | `az` bearer token + ADO REST (`https://{org}.visualstudio.com/...`) |
+
+`auto` resolution order: `mcp` -> `rest` (first match wins; both require `az` signed in). An explicit `.github/pr-review.json` `ado-access` value overrides the auto choice. Registry mode keeps `ado-repo-server`, so it always resolves to `mcp` (behavior unchanged).
+
+**Per-operation transport**: each op below documents an MCP recipe and a terminal-REST recipe. `mcp` runs the MCP recipe; `rest` runs the REST recipe (a first-class path, not a last-resort fallback). When `ado-access = mcp` and an MCP call fails for an auth / availability reason, fall through to that op's REST recipe for the single call.
+
+**Cross-org**: `rest` takes `{org}` from `repoContext` on every call, so one signed-in `az` reviews PRs across any org whose tenant that identity can reach. `mcp` is pinned to its server's launch org (cross-org needs one server per org). See the Tenant pitfall under `postComment`: each org maps to one AAD tenant; if `az` is signed into the wrong tenant the REST call returns 203/401 -- re-run `az login --tenant <id>` (the preflight reports the current `deps.az.tenantId`).
+
 ## getPrInfo
 
 Primary path (MCP): `repo_get_pull_request_by_id` on the `{registry.ado-repo-server}` server with `repositoryId={repoGuid}`, `pullRequestId={prId}`, `includeWorkItemRefs=true`. Save the returned object to `pr-review/$repo/$prId/raw-pr.json` for downstream steps.

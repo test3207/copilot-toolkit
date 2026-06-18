@@ -14,6 +14,21 @@ The `repoContext` (from a matched registry entry, OR derived in derive mode) MUS
 
 `gh` CLI MUST be authenticated for the host (`gh auth status` must show `Logged in`). If not, instruct the user to run `gh auth login` — do not attempt interactive auth from the agent.
 
+## accessMethods
+
+`gh-access` (a `repoContext` field; default `auto`) selects how this provider talks to GitHub. Workflow Step 0 resolves it after running the preflight doctor (`scripts/preflight.mjs --platform github`).
+
+GitHub review **requires** either an authenticated `gh` CLI or a `GITHUB_TOKEN`. If neither is present, preflight reports it as `blocking` and Step 0 STOPS with remediation. **There is no offline mode.**
+
+| Method | Selected when | Transport |
+| --- | --- | --- |
+| `cli` | `gh` is installed and authenticated (preflight `deps.gh.authed`) | `gh` CLI |
+| `rest` | no `gh`, but `GITHUB_TOKEN` is set | REST + bearer token |
+
+`auto` resolution order: `cli` -> `rest`. An explicit `.github/pr-review.json` `gh-access` value overrides.
+
+Each op below documents a `gh` recipe and a REST recipe. `cli` runs `gh`; `rest` runs the REST recipe.
+
 ## getPrInfo
 
 Primary path (terminal `gh` — body never enters main-agent context):

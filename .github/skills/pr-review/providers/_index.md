@@ -8,6 +8,8 @@ Provider modules decouple `pr-review` from any single PR host. The workflow is p
 2. **Treat the provider file as a contract**: it MUST expose the sections listed in the [Provider Contract](#provider-contract) below. Run the recipe under each section verbatim.
 3. **Inject derived values into subagents**: the workflow Step 7 dispatch passes `fileLinkTemplate` and `forbiddenAutoLinkPatterns` (both built from the provider file + Step 1 PR response) to every subagent. Subagents do NOT know which platform is in use.
 
+**Preflight + access method**: before fetching, workflow Step 0 runs `scripts/preflight.mjs --platform {pr-platform}` to probe the real dependencies (node, git, and the platform's auth CLI). It returns a capability report + a recommended access method and, for anything missing, the exact install / sign-in command. Step 0 resolves the provider's access method (see each provider's `## accessMethods`) from the preflight result + any `.github/pr-review.json` override; a missing hard dependency (node, git, or the platform credential -- `az` for ADO, `gh` / `GITHUB_TOKEN` for GitHub) STOPS the run with remediation. There is no offline mode.
+
 ## Provider Contract
 
 Every `providers/{name}.md` MUST contain these sections, in this order, with these exact H2 headings:
@@ -20,6 +22,7 @@ Every `providers/{name}.md` MUST contain these sections, in this order, with the
 | `## fileLinkTemplate` | Template string with `{path}`, `{startLine}`, `{endLine}` placeholders + concrete substitution example + handling rule for single-line refs. |
 | `## autoLinkForbiddenPatterns` | Table of `pattern` (regex) + `autoLinksTo` (what the host turns it into) + `safeReplacement` (what subagents should write instead). Workflow Step 9.1b loops through this list. |
 | `## postComment` | Recipe to POST the assembled `pr-comment.md` body to the PR. Prefer terminal-only paths (CLI or REST) so the body never re-enters main-agent context. |
+| `## accessMethods` | How the provider authenticates + the `auto` resolution order across its transports (MCP / CLI / REST) and the hard-stop when the required credential is missing. Workflow Step 0 resolves the method after the preflight doctor. |
 
 Optional sections (use when applicable):
 
@@ -81,6 +84,6 @@ Workflow Step 9.1b runs `Select-String -Path pr-comment.md -Pattern <each-patter
 
 | `pr-platform` | File | Tool surface |
 | --- | --- | --- |
-| `ado` | [ado.md](ado.md) | `repo_*` MCP + REST/`az` fallback |
-| `github` | [github.md](github.md) | `gh` CLI + REST fallback |
+| `ado` | [ado.md](ado.md) | `az`/REST + `repo_*` MCP optional |
+| `github` | [github.md](github.md) | `gh` CLI + REST |
 | `gitlab` | (not shipped) | TODO when first GitLab consumer requests it. Author per this contract. |
