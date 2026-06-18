@@ -19,7 +19,8 @@
 // Exit codes: 0 ok | 2 usage error | 3 auth (no gh and no GITHUB_TOKEN) | 4 call failed.
 
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 const PR_FIELDS = 'number,title,body,author,headRefName,baseRefName,headRefOid,state,isDraft,createdAt,reviewRequests,reviews,additions,deletions,changedFiles,closingIssuesReferences';
 
@@ -37,10 +38,12 @@ function parseArgs(argv) {
   return { op, opts };
 }
 
-function fail(code, msg) {
-  console.error(`github-rest: ${msg}`);
-  process.exit(code);
+class ExitError extends Error {
+  constructor(code, message) { super(message); this.code = code; }
 }
+// Signal an exit WITHOUT process.exit(): a hard exit while undici's keep-alive socket is mid
+// teardown trips a libuv assertion on Windows. Throw instead; the top-level catch sets exitCode.
+function fail(code, msg) { throw new ExitError(code, msg); }
 
 function tryExec(cmd, opts = {}) {
   return execSync(cmd, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 60000, windowsHide: true, maxBuffer: 32 * 1024 * 1024, ...opts });
@@ -72,7 +75,7 @@ async function ghFetch(url, init = {}) {
 
 function output(obj, outPath, isText = false) {
   const data = isText ? String(obj) : `${JSON.stringify(obj, null, 2)}\n`;
-  if (outPath) { writeFileSync(outPath, data); console.error(`github-rest: wrote ${outPath}`); }
+  if (outPath) { mkdirSync(dirname(outPath), { recursive: true }); writeFileSync(outPath, data); console.error(`github-rest: wrote ${outPath}`); }
   else process.stdout.write(data.endsWith('\n') ? data : `${data}\n`);
 }
 
@@ -138,4 +141,7 @@ async function main() {
   }
 }
 
-main().catch((e) => fail(1, e.stack || e.message));
+main().catch((e) => {
+  if (e instanceof ExitError) { if (e.message) console.error(`github-rest: ${e.message}`); process.exitCode = e.code; }
+  else { console.error(`github-rest: ${e.stack || e.message}`); process.exitCode = 1; }
+});

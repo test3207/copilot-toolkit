@@ -24,7 +24,8 @@
 // Without --out, JSON goes to stdout; with --out it is written to the file (path logged to stderr).
 
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 const DEFAULT_RESOURCE = '499b84ac-1321-427f-aa17-267ca6975798'; // public ADO
 const DEFAULT_API = '7.1';
@@ -43,10 +44,12 @@ function parseArgs(argv) {
   return { op, opts };
 }
 
-function fail(code, msg) {
-  console.error(`ado-rest: ${msg}`);
-  process.exit(code);
+class ExitError extends Error {
+  constructor(code, message) { super(message); this.code = code; }
 }
+// Signal an exit WITHOUT process.exit(): a hard exit while undici's keep-alive socket is mid
+// teardown trips a libuv assertion on Windows. Throw instead; the top-level catch sets exitCode.
+function fail(code, msg) { throw new ExitError(code, msg); }
 
 function getToken(resourceGuid) {
   if (!/^[0-9a-fA-F-]{36}$/.test(resourceGuid)) fail(2, `--resource-guid must be a GUID, got "${resourceGuid}"`);
@@ -83,7 +86,7 @@ async function adoFetch(url, token, init = {}) {
 
 function output(obj, outPath) {
   const json = `${JSON.stringify(obj, null, 2)}\n`;
-  if (outPath) { writeFileSync(outPath, json); console.error(`ado-rest: wrote ${outPath}`); }
+  if (outPath) { mkdirSync(dirname(outPath), { recursive: true }); writeFileSync(outPath, json); console.error(`ado-rest: wrote ${outPath}`); }
   else process.stdout.write(json);
 }
 
@@ -135,4 +138,7 @@ async function main() {
   }
 }
 
-main().catch((e) => fail(1, e.stack || e.message));
+main().catch((e) => {
+  if (e instanceof ExitError) { if (e.message) console.error(`ado-rest: ${e.message}`); process.exitCode = e.code; }
+  else { console.error(`ado-rest: ${e.stack || e.message}`); process.exitCode = 1; }
+});
