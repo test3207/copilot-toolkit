@@ -44,6 +44,8 @@ Set-Content -Path "pr-review/.gitignore" -Value '*'
 git --no-pager diff origin/{targetBranchName}...HEAD > "pr-review/$repo/$prId/diff.txt"
 ```
 
+> **Empty diff on an already-merged PR**: the `target...HEAD` form yields an empty patch when the head is already an ancestor of the target (i.e. the PR was merged). Normal reviews never hit this -- Step 1 skips non-`active` PRs -- but when you deliberately review a merged PR (a Step 1 override), fall back to the provider's `fetchDiff` recipe (GitHub: `gh pr diff {prId}`; see `providers/{pr-platform}.md`) so Step 7 analyzes the real change set, not an empty file.
+
 **Context budget signal**: If changed files > 30 OR diff lines > 800, set `contextPressure = high`. This signals only -- subagents in Step 7 are mandatory regardless of this flag.
 
 ## Step 5: Create section dir + header + metadata + build fileLinkTemplate

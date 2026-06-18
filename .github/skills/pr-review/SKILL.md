@@ -30,7 +30,7 @@ When NOT to use it:
 
 | Item | Value |
 | ---- | ----- |
-| Skill version | `v1.0` (skill conversion of pr-review tool v3.3.0) |
+| Skill version | `v1.0` |
 | Working dir | `pr-review/{repo}/{prId}/sections/*.md` per-section files; `pr-review/{repo}/{prId}/review.md` is the terminal-concat artifact; the persisted diff is `pr-review/{repo}/{prId}/diff.txt`. All output lives under `pr-review/`, which the skill self-ignores via a generated `pr-review/.gitignore` (`*`) on first run -- portable, needs no consumer root `.gitignore` or sync. |
 | Providers | [providers/ado.md](./providers/ado.md), [providers/github.md](./providers/github.md). Add a new file under `providers/` for new hosts; no workflow edits required. |
 | Subagents | `.github/agents/pr-logic-reviewer.md` (7a) · `.github/agents/pr-impact-analyzer.md` (7b) · `.github/agents/pr-quality-checker.md` (7c) · `.github/agents/pr-finding-validator.md` (7d). |
@@ -106,7 +106,7 @@ When posting review comments to PR:
    ```
 
    - `<model_name>`: state your exact model name as defined in your system instructions. Do not guess.
-   - `<tool_version>`: from the Quick Reference table above.
+   - `<tool_version>`: the **Skill version** value from the Quick Reference table above (currently `v1.0`). Use exactly that string -- do not substitute a different version.
 4. **Post the full assembled body** — the section template concats TL;DR + Action Items + Intent + Validation (+ ICM if applicable). Do NOT condense or rewrite from memory.
 5. **ICM Comment is NOT posted to PR** — it is saved in `sections/90-icm.md` for manual copy-paste.
 
