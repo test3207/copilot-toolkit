@@ -18,9 +18,9 @@ The main agent operates ONLY on the compact summaries returned by 7a-7d. Do NOT 
      `[<repo-relative path>#L<startLine>(-L<endLine>)](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>)`
      The subagent summaries already returned links in this format -- copy them verbatim into the Action Items. Do NOT construct URLs yourself; the template comes from the provider file (see `providers/{pr-platform}.md`).
    - Zero items survive -> write `(none)`. Do NOT invent items.
-3. Write `pr-review/{prId}/sections/05-tldr.md`. See [reference.md](../reference.md#tldr-section-file-template) for template.
-4. IF this PR fixes an ICM incident -> write `pr-review/{prId}/sections/90-icm.md` with the ICM-comment template from [reference.md](../reference.md#icm-comment-section-file-template). Otherwise skip (the section won't be included in the concat).
-5. Build `pr-review/{prId}/pr-comment.md` -- this is the verbatim PR-comment body. **Curated content only**: AI header + TL;DR (with Action Items) + Intent + Validation (chain per blocking item) + ICM-if-applicable + footer. Raw subagent sections (20-logic / 30-impact / 40-quality) are deliberately excluded -- every actionable finding is already in the validator-curated Action Items + Validation, and including the raw analyses would duplicate each Bug/High/Medium finding 2-3x. The full per-call-site tables / call chains / smell tables stay in `review.md` for local exploration. See [reference.md](../reference.md#pr-comment-artifact-template) for the assembly recipe. Use terminal `Get-Content` concat to pull section bodies in (no `read_file`). This file lives OUTSIDE `sections/` so it does not get duplicated by the `review.md` concat in Step 9.1.
+3. Write `pr-review/{repo}/{prId}/sections/05-tldr.md`. See [reference.md](../reference.md#tldr-section-file-template) for template.
+4. IF this PR fixes an ICM incident -> write `pr-review/{repo}/{prId}/sections/90-icm.md` with the ICM-comment template from [reference.md](../reference.md#icm-comment-section-file-template). Otherwise skip (the section won't be included in the concat).
+5. Build `pr-review/{repo}/{prId}/pr-comment.md` -- this is the verbatim PR-comment body. **Curated content only**: AI header + TL;DR (with Action Items) + Intent + Validation (chain per blocking item) + ICM-if-applicable + footer. Raw subagent sections (20-logic / 30-impact / 40-quality) are deliberately excluded -- every actionable finding is already in the validator-curated Action Items + Validation, and including the raw analyses would duplicate each Bug/High/Medium finding 2-3x. The full per-call-site tables / call chains / smell tables stay in `review.md` for local exploration. See [reference.md](../reference.md#pr-comment-artifact-template) for the assembly recipe. Use terminal `Get-Content` concat to pull section bodies in (no `read_file`). This file lives OUTSIDE `sections/` so it does not get duplicated by the `review.md` concat in Step 9.1.
 6. IF `contextPressure = high` from Step 4: append a Coverage Note inside `05-tldr.md` listing analyzed / sampled / skipped files.
 
 ---
@@ -31,25 +31,27 @@ The main agent operates ONLY on the compact summaries returned by 7a-7d. Do NOT 
 
 ```pwsh
 $prId = '{prId}'
+$repo = '{repo}'
 # Explicit blank-line delimiter between sections. Plain Get-Content -Raw | Set-Content concatenates without a separator,
 # so any section file missing a trailing newline collapses into the next heading. TrimEnd + -join '`n`n' is safe regardless.
-$sections = Get-ChildItem "pr-review/$prId/sections/*.md" | Sort-Object Name
+$sections = Get-ChildItem "pr-review/$repo/$prId/sections/*.md" | Sort-Object Name
 $body = ($sections | ForEach-Object { (Get-Content -Raw $_.FullName).TrimEnd("`r","`n") }) -join "`n`n"
-($body + "`n") | Set-Content -Encoding UTF8 "pr-review/$prId/review.md"
+($body + "`n") | Set-Content -Encoding UTF8 "pr-review/$repo/$prId/review.md"
 ```
 
 ### 9.1b File-link + auto-link sanity check (HARD GATE before posting)
 
 ```pwsh
 $prId = '{prId}'
+$repo = '{repo}'
 # Check 1: any markdown link whose target is not an absolute URL is a workspace-relative path -- forbidden in the posted comment.
-$badLinks = Select-String -Path "pr-review/$prId/pr-comment.md" -Pattern '\]\((?!https?:|mailto:|#)' -AllMatches
+$badLinks = Select-String -Path "pr-review/$repo/$prId/pr-comment.md" -Pattern '\]\((?!https?:|mailto:|#)' -AllMatches
 
 # Check 2: each forbiddenAutoLinkPatterns entry from the provider (built in Step 5). Loop and abort on any match.
 # The patterns + safe replacements live in providers/{pr-platform}.md; the agent runs one Select-String per row.
 $violations = @()
 foreach ($p in $forbiddenAutoLinkPatterns) {
-    $hits = Select-String -Path "pr-review/$prId/pr-comment.md" -Pattern $p.pattern -AllMatches
+    $hits = Select-String -Path "pr-review/$repo/$prId/pr-comment.md" -Pattern $p.pattern -AllMatches
     if ($hits) {
         $violations += [pscustomobject]@{ pattern = $p.pattern; autoLinksTo = $p.autoLinksTo; safe = $p.safeReplacement; hits = $hits }
     }

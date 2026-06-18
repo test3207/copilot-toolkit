@@ -18,7 +18,7 @@ Sourced from [workflow.md](../workflow.md). Step 6 is main-agent inline; Step 7 
    - **Resolution precedence**: an explicit `anti-pattern-allowlist` from the registry entry / `.github/pr-review.json` wins (registry mode, unchanged); otherwise auto-detect from the diff (derive mode). A mixed-language diff loads every matching pack.
    - **Coding-standards list**: in registry mode pass the registry `coding-standards` list through unchanged. In derive mode (no list), auto-detect the same way: `common.md` always, plus the per-language file (`typescript.md` for `.ts/.tsx/.js/.jsx`, `csharp.md` for `.cs`). Subagents prepend `{toolkit-root}/skills/coding-standards/`.
 
-Write `pr-review/{prId}/sections/10-intent.md`:
+Write `pr-review/{repo}/{prId}/sections/10-intent.md`:
 
 ```markdown
 ## Intent & Approach
@@ -54,17 +54,18 @@ You are {agentName}. Analyze PR !{prId} for {role}.
 
 toolkit-root: {toolkit-root from main agent}                # workspace-relative path the skill's caller resolved (e.g. `.copilot-toolkit/.github` when consumed, `.github` when self-hosted). Substitute {toolkit-root} placeholders in your agent prompt with this value.
 prId: {prId}
+repo: {repo}                                            # repo name/key (registry match, or derived repoName in derive mode). Output dir = pr-review/{repo}/{prId}/ so same-number PRs in different repos don't collide.
 fileLinkTemplate: {fileLinkTemplate from Step 5}        # Template with {path}/{startLine}/{endLine} placeholders. Substitute these per finding. Do NOT construct URLs yourself.
 forbiddenAutoLinkPatterns: {forbiddenAutoLinkPatterns from Step 5}   # Regex list. Never emit text that matches these; use the safe replacements shown in the table.
 Intent: {one-line from Step 6}
 Change Type: {Step 6}
 Repo path: {registry.path}
 Target branch: {targetBranch}
-Changed files: see pr-review/{prId}/diff.txt
+Changed files: see pr-review/{repo}/{prId}/diff.txt
 Anti-pattern groups to load: {list of file paths from Step 6 scan}
 Repo coding-standards: {list from registry, or language-autodetected in derive mode -- Step 6}
 
-Output contract: WRITE full analysis to pr-review/{prId}/sections/{file}; RETURN ONLY the compact summary your agent file specifies.
+Output contract: WRITE full analysis to pr-review/{repo}/{prId}/sections/{file}; RETURN ONLY the compact summary your agent file specifies.
 ```
 
 | Subagent | role | Section file written |
@@ -79,6 +80,6 @@ Each subagent returns a compact summary message. Main agent collects the 3 summa
 
 1. From the 3 summaries, extract Medium+ findings (severity tag >= Medium)
 2. IF none: skip to Step 8
-3. Dispatch **pr-finding-validator** with: `toolkit-root` from main agent, the Medium+ findings list (with the original URL links preserved), intent summary, `fileLinkTemplate + forbiddenAutoLinkPatterns` from Step 5, paths to `20-logic.md` / `30-impact.md` / `40-quality.md`
+3. Dispatch **pr-finding-validator** with: `toolkit-root` + `repo` + `prId` from main agent (so it can locate `pr-review/{repo}/{prId}/sections/`), the Medium+ findings list (with the original URL links preserved), intent summary, `fileLinkTemplate + forbiddenAutoLinkPatterns` from Step 5, paths to `20-logic.md` / `30-impact.md` / `40-quality.md`
 4. Validator writes `50-validation.md`; returns per-finding verdicts
 5. Apply verdicts to the in-context summaries: upgrade severities where validator says so; never downgrade

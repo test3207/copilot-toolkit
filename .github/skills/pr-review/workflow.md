@@ -7,7 +7,7 @@ Orchestration guide for `/pr-review review pr <prId>`. Main agent follows these 
 Prior versions had subagents return the full analysis as the response message. The main agent then appended each response to `review.md`. When a subagent's response was large, the runtime spilled it to a `chat-session-resources/.../content.json` blob and the main agent had to `read_file` it back -- the analysis ended up in main-agent context anyway. This funneled 4 large analyses through main context and triggered early auto-compaction.
 
 v3.2 contract:
-- Each subagent **writes its full analysis directly to its own section file** under `pr-review/{prId}/sections/`.
+- Each subagent **writes its full analysis directly to its own section file** under `pr-review/{repo}/{prId}/sections/`.
 - Each subagent **returns a compact summary** (findings list + severity counts + section-file path) as its response message.
 - Main agent works only from the compact summaries to decide verdict + build Action Items + TL;DR.
 - `review.md` is assembled by **terminal concat** of the section files (no `read_file` of full sections by main agent during assembly).
@@ -66,7 +66,7 @@ Do NOT:
 - Condense tables in the included sections into summary counts (e.g., "3 High issues" instead of the actual 3 rows in `50-validation.md`)
 - Add or drop sections relative to the reference template -- raw subagent sections (20/30/40) are intentionally excluded; do not re-add them. ICM (`90-icm.md`) is conditional on the section file existing.
 
-**Verification before Step 9.2**: `(Get-Content "pr-review/$prId/pr-comment.md").Count` is reasonable (typically ~150-300 lines for a non-trivial PR; not 5 lines because the concat silently broke). If suspiciously short, re-run the assembly.
+**Verification before Step 9.2**: `(Get-Content "pr-review/$repo/$prId/pr-comment.md").Count` is reasonable (typically ~150-300 lines for a non-trivial PR; not 5 lines because the concat silently broke). If suspiciously short, re-run the assembly.
 
 ## Flow Summary
 

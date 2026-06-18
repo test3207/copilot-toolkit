@@ -36,11 +36,12 @@ git --no-pager diff --stat origin/{targetBranchName}...HEAD
 # MANDATORY: persist the full patch so Step 7 subagents can read it without re-running git diff.
 # The Step 7 dispatch template references this exact path; do NOT skip this command.
 $prId = '{prId}'
-New-Item -ItemType Directory -Force -Path "pr-review/$prId" | Out-Null
+$repo = '{repo}'
+New-Item -ItemType Directory -Force -Path "pr-review/$repo/$prId" | Out-Null
 # Self-ignore: drop a .gitignore so the whole pr-review/ output tree stays out of the
 # consumer's git regardless of their root .gitignore / sync state (portable to the plugin too).
 Set-Content -Path "pr-review/.gitignore" -Value '*'
-git --no-pager diff origin/{targetBranchName}...HEAD > "pr-review/$prId/diff.txt"
+git --no-pager diff origin/{targetBranchName}...HEAD > "pr-review/$repo/$prId/diff.txt"
 ```
 
 **Context budget signal**: If changed files > 30 OR diff lines > 800, set `contextPressure = high`. This signals only -- subagents in Step 7 are mandatory regardless of this flag.
@@ -49,9 +50,10 @@ git --no-pager diff origin/{targetBranchName}...HEAD > "pr-review/$prId/diff.txt
 
 ```pwsh
 $prId = '{prId}'
-New-Item -ItemType Directory -Force -Path "pr-review/$prId/sections" | Out-Null
+$repo = '{repo}'
+New-Item -ItemType Directory -Force -Path "pr-review/$repo/$prId/sections" | Out-Null
 # Clean any prior section files so subagent `create_file` doesn't collide
-Remove-Item "pr-review/$prId/sections/*.md" -ErrorAction SilentlyContinue
+Remove-Item "pr-review/$repo/$prId/sections/*.md" -ErrorAction SilentlyContinue
 ```
 
 From the provider file's `fileLinkTemplate` definition, substitute every host/registry/`prInfo`-derived placeholder (e.g. `{org}`, `{repo}`, `{prId}`, `{headSha}`) using the values from Step 1 + the matched registry entry. The result is `fileLinkTemplate` -- a string containing ONLY the per-finding placeholders `{path}`, `{startLine}`, `{endLine}`. Remember this string for Step 7 dispatch and Step 8 Action Items.
@@ -60,7 +62,7 @@ Also compute `forbiddenAutoLinkPatterns` -- the full table from the provider's `
 
 Concrete example: see `providers/{pr-platform}.md` for substituted-template and pattern-table examples.
 
-Write `pr-review/{prId}/sections/00-header.md`:
+Write `pr-review/{repo}/{prId}/sections/00-header.md`:
 
 ```markdown
 # PR Review: !{prId} - {title}

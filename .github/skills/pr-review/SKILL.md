@@ -31,7 +31,7 @@ When NOT to use it:
 | Item | Value |
 | ---- | ----- |
 | Skill version | `v1.0` (skill conversion of pr-review tool v3.3.0) |
-| Working dir | `pr-review/{prId}/sections/*.md` per-section files; `pr-review/{prId}/review.md` is the terminal-concat artifact; the persisted diff is `pr-review/{prId}/diff.txt`. All output lives under `pr-review/`, which the skill self-ignores via a generated `pr-review/.gitignore` (`*`) on first run -- portable, needs no consumer root `.gitignore` or sync. |
+| Working dir | `pr-review/{repo}/{prId}/sections/*.md` per-section files; `pr-review/{repo}/{prId}/review.md` is the terminal-concat artifact; the persisted diff is `pr-review/{repo}/{prId}/diff.txt`. All output lives under `pr-review/`, which the skill self-ignores via a generated `pr-review/.gitignore` (`*`) on first run -- portable, needs no consumer root `.gitignore` or sync. |
 | Providers | [providers/ado.md](./providers/ado.md), [providers/github.md](./providers/github.md). Add a new file under `providers/` for new hosts; no workflow edits required. |
 | Subagents | `.github/agents/pr-logic-reviewer.md` (7a) · `.github/agents/pr-impact-analyzer.md` (7b) · `.github/agents/pr-quality-checker.md` (7c) · `.github/agents/pr-finding-validator.md` (7d). |
 
@@ -93,7 +93,7 @@ Orchestration entry point is [workflow.md](./workflow.md); it indexes three step
 
 When posting review comments to PR:
 
-1. **Default path = provider's `postComment` recipe** (Step 9.2 in workflow.md). Each provider picks its own primary: MCP-first for providers with an MCP server (e.g. ADO `repo_create_pull_request_thread`); CLI-first for providers without (e.g. GitHub `gh pr comment`, body piped from `pr-review/{prId}/pr-comment.md` without entering main-agent context).
+1. **Default path = provider's `postComment` recipe** (Step 9.2 in workflow.md). Each provider picks its own primary: MCP-first for providers with an MCP server (e.g. ADO `repo_create_pull_request_thread`); CLI-first for providers without (e.g. GitHub `gh pr comment`, body piped from `pr-review/{repo}/{prId}/pr-comment.md` without entering main-agent context).
 2. **Fallback** — only if the primary path fails: use the provider's documented fallback (ADO: terminal REST `POST .../threads`, body never enters main-agent context; GitHub: REST `POST /issues/{n}/comments`). Always create NEW comment / thread, never reply.
 3. **AI attribution header is built INTO the section template** (see [reference.md](./reference.md) → PR Comment section file template):
 

@@ -13,6 +13,7 @@ You are an impact analysis specialist. Trace the call chain of modified code and
 
 You will receive:
 - **prId** -- used to construct the section file path
+- **repo** -- repo name/key (registry match, or derived repoName in derive mode); used with prId so the output dir is pr-review/{repo}/{prId}/ -- same-number PRs in different repos no longer collide
 - **fileLinkTemplate** -- pre-substituted URL template containing ONLY `{path}`, `{startLine}`, and `{endLine}` placeholders. Substitute these per finding to build file links. Do NOT construct URLs from scratch; the main agent built this from the matched provider file. Example shapes:
   - ADO: `https://{org}.visualstudio.com/{project}/_git/{repoName}/pullrequest/{prId}?path=/{path}&line={startLine}&lineEnd={endLine}&lineStartColumn=1&lineEndColumn=1&type=2&lineStyle=plain&_a=files`
   - GitHub: `https://github.com/{owner}/{repo}/blob/{headSha}/{path}#L{startLine}-L{endLine}`
@@ -78,10 +79,10 @@ If you are unsure whether a pattern will trigger, prefer the safe replacement â€
 
 You have TWO outputs:
 
-1. **Section file**: `pr-review/{prId}/sections/30-impact.md` -- full analysis goes here (call chain, per-caller table, co-writer table, regression risk reasoning, evidence).
+1. **Section file**: `pr-review/{repo}/{prId}/sections/30-impact.md` -- full analysis goes here (call chain, per-caller table, co-writer table, regression risk reasoning, evidence).
    - Use `create_file` (or `replace_string_in_file` if it already exists from a prior run).
    - Top-level headings: `## Call Chain / Impact Analysis`, `## Regression Risk`.
-   - **Only file you write is `pr-review/{prId}/sections/30-impact.md`.**
+   - **Only file you write is `pr-review/{repo}/{prId}/sections/30-impact.md`.**
 
 2. **Response message**: COMPACT summary -- findings list + risk level + severity counts. No tables, no chain prose.
 
@@ -141,7 +142,7 @@ For each anti-pattern group file the main agent told you to load (typically `sem
 
 ## Section File Format
 
-Write to `pr-review/{prId}/sections/30-impact.md`:
+Write to `pr-review/{repo}/{prId}/sections/30-impact.md`:
 
 ```markdown
 ## Call Chain / Impact Analysis
@@ -185,7 +186,7 @@ Return ONLY this:
 ```markdown
 ### pr-impact-analyzer summary
 
-Section file: pr-review/{prId}/sections/30-impact.md
+Section file: pr-review/{repo}/{prId}/sections/30-impact.md
 
 Findings (use the [File Reference URL Rule](#file-reference-url-rule) for every link):
 - [Bug] [path/to/file.ts#L42](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line}

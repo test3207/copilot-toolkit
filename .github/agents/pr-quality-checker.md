@@ -15,6 +15,7 @@ You are a code quality checker. Find similar code patterns and detect code smell
 You will receive:
 - **toolkit-root** -- absolute / workspace-relative path the calling agent resolved (e.g. `.copilot-toolkit/.github` when consumed, `.github` when self-hosted). Every `{toolkit-root}` placeholder in this prompt MUST be replaced with this value before opening the referenced file.
 - **prId** -- used to construct the section file path
+- **repo** -- repo name/key (registry match, or derived repoName in derive mode); used with prId so the output dir is pr-review/{repo}/{prId}/ -- same-number PRs in different repos no longer collide
 - **fileLinkTemplate** -- pre-substituted URL template containing ONLY `{path}`, `{startLine}`, and `{endLine}` placeholders. Substitute these per finding to build file links. Do NOT construct URLs from scratch; the main agent built this from the matched provider file. Example shapes:
   - ADO: `https://{org}.visualstudio.com/{project}/_git/{repoName}/pullrequest/{prId}?path=/{path}&line={startLine}&lineEnd={endLine}&lineStartColumn=1&lineEndColumn=1&type=2&lineStyle=plain&_a=files`
   - GitHub: `https://github.com/{owner}/{repo}/blob/{headSha}/{path}#L{startLine}-L{endLine}`
@@ -77,10 +78,10 @@ If you are unsure whether a pattern will trigger, prefer the safe replacement â€
 
 Two outputs:
 
-1. **Section file**: `pr-review/{prId}/sections/40-quality.md` -- full similar-code analysis and smell table.
+1. **Section file**: `pr-review/{repo}/{prId}/sections/40-quality.md` -- full similar-code analysis and smell table.
    - Use `create_file` (or `replace_string_in_file` if it already exists).
    - Top-level headings: `## Similar Code Analysis`, `## Code Smells`.
-   - **Only file you write is `pr-review/{prId}/sections/40-quality.md`.**
+   - **Only file you write is `pr-review/{repo}/{prId}/sections/40-quality.md`.**
 
 2. **Response message**: COMPACT summary -- smell counts + completeness verdict + DRY verdict. No row-by-row smell table in the response.
 
@@ -161,7 +162,7 @@ Read `{toolkit-root}/skills/pr-review/rules.md` for additional repo-specific cri
 
 ## Section File Format
 
-Write to `pr-review/{prId}/sections/40-quality.md`:
+Write to `pr-review/{repo}/{prId}/sections/40-quality.md`:
 
 ```markdown
 ## Similar Code Analysis
@@ -197,7 +198,7 @@ Return ONLY this:
 ```markdown
 ### pr-quality-checker summary
 
-Section file: pr-review/{prId}/sections/40-quality.md
+Section file: pr-review/{repo}/{prId}/sections/40-quality.md
 
 Smell counts: High=0 Medium=2 Low=1
 Completeness: ok / incomplete -- {one-line if incomplete}

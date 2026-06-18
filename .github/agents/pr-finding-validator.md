@@ -21,12 +21,13 @@ Substitute `{toolkit-root}` with the value the main agent passed in the Input se
 You will receive:
 - **toolkit-root** -- absolute / workspace-relative path the calling agent resolved (e.g. `.copilot-toolkit/.github` when consumed, `.github` when self-hosted). Every `{toolkit-root}` placeholder in this prompt MUST be replaced with this value before opening the referenced file.
 - **prId** -- used for the section file path
+- **repo** -- repo name/key (registry match, or derived repoName in derive mode); used with prId so the output dir is pr-review/{repo}/{prId}/ -- same-number PRs in different repos no longer collide
 - **fileLinkTemplate** -- pre-substituted URL template containing ONLY `{path}`, `{startLine}`, and `{endLine}` placeholders. Substitute these per finding to build file links. Do NOT construct URLs from scratch; the main agent built this from the matched provider file. Example shapes:
   - ADO: `https://{org}.visualstudio.com/{project}/_git/{repoName}/pullrequest/{prId}?path=/{path}&line={startLine}&lineEnd={endLine}&lineStartColumn=1&lineEndColumn=1&type=2&lineStyle=plain&_a=files`
   - GitHub: `https://github.com/{owner}/{repo}/blob/{headSha}/{path}#L{startLine}-L{endLine}`
 - **forbiddenAutoLinkPatterns** -- list of `{ pattern, autoLinksTo, safeReplacement }` rows from the provider. Never emit text that matches `pattern`; use the safe replacement shown for that pattern. Examples vary by host (ADO `#\d+` -> work item; GitHub `#\d+` -> issue/PR, `@user` -> mention, bare SHA -> commit).
 - **Action items**: consolidated list of Medium+ findings (from the 3 prior subagent summaries: severity, file link, one-line description) -- file links already follow the URL rule; preserve them as-is when echoing.
-- **Section files of the 3 prior subagents**: `pr-review/{prId}/sections/20-logic.md`, `30-impact.md`, `40-quality.md` -- read these for the call-chain tables and per-caller analyses already built (don't re-trace).
+- **Section files of the 3 prior subagents**: `pr-review/{repo}/{prId}/sections/20-logic.md`, `30-impact.md`, `40-quality.md` -- read these for the call-chain tables and per-caller analyses already built (don't re-trace).
 - **Intent summary**: what the PR does
 - **Repo path**: working tree
 
@@ -87,10 +88,10 @@ If you are unsure whether a pattern will trigger, prefer the safe replacement â€
 
 Two outputs:
 
-1. **Section file**: `pr-review/{prId}/sections/50-validation.md` -- full validation table + chains + repros.
+1. **Section file**: `pr-review/{repo}/{prId}/sections/50-validation.md` -- full validation table + chains + repros.
    - Use `create_file` (or `replace_string_in_file` if it already exists).
    - Top-level heading: `## Finding Validation`.
-   - **Only file you write is `pr-review/{prId}/sections/50-validation.md`.**
+   - **Only file you write is `pr-review/{repo}/{prId}/sections/50-validation.md`.**
 
 2. **Response message**: COMPACT verdict list per finding -- no chain prose, no repro steps.
 
@@ -134,7 +135,7 @@ Rules:
 
 ## Section File Format
 
-Write to `pr-review/{prId}/sections/50-validation.md`:
+Write to `pr-review/{repo}/{prId}/sections/50-validation.md`:
 
 ```markdown
 ## Finding Validation
@@ -165,7 +166,7 @@ Return ONLY this:
 ```markdown
 ### pr-finding-validator summary
 
-Section file: pr-review/{prId}/sections/50-validation.md
+Section file: pr-review/{repo}/{prId}/sections/50-validation.md
 
 Per-finding verdicts (preserve original file links from the input action items unchanged):
 - F1 [Bug]: confirmed (was [Bug] [path/to/file.ts#L42](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>))
