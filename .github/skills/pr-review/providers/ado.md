@@ -20,7 +20,7 @@ If `ado-resource-guid` is omitted, use `499b84ac-1321-427f-aa17-267ca6975798` (p
 When there is no registry entry and `.github/pr-review.json` did not supply `repo-guid`, resolve it once before `getPrInfo`:
 
 - Primary (MCP): `repo_get_repo_by_name_or_id` on the `{ado-repo-server}` server with `project={project}`, `repositoryNameOrId={repoName}` → take `.id` as `repoGuid` and `.name` as `repoNameForLinks`.
-- Fallback (REST): `GET https://{org}.visualstudio.com/{project}/_apis/git/repositories/{repoName}?api-version=7.1` with the same bearer token as below → `.id` / `.name`.
+- Fallback / `rest` transport: `node .copilot-toolkit/scripts/ado-rest.mjs get-repo --org {org} --project {project} --repo-name {repoName}` → prints `{ id, name, defaultBranch }`; take `.id` as `repoGuid`, `.name` as `repoNameForLinks`.
 
 In registry mode this step is skipped (the entry already carries `repo-guid`).
 
@@ -45,21 +45,9 @@ An authenticated `az` is **required** for ADO review -- the `rest` transport use
 
 Primary path (MCP): `repo_get_pull_request_by_id` on the `{registry.ado-repo-server}` server with `repositoryId={repoGuid}`, `pullRequestId={prId}`, `includeWorkItemRefs=true`. Save the returned object to `pr-review/$repo/$prId/raw-pr.json` for downstream steps.
 
-Fallback (terminal REST — use only if the MCP call errors out for auth / availability / parameter reason):
+Fallback / `rest` transport (ctx-isolated — the payload never enters main-agent context):
 
-```pwsh
-$prId = '{prId}'
-$repo = '{repo}'
-$org = '{registry.ado-repo.org}'
-$project = '{registry.ado-repo.project}'
-$repoGuid = '{registry.repo-guid}'
-$adoResourceGuid = '{registry.ado-resource-guid OR 499b84ac-1321-427f-aa17-267ca6975798}'
-$token = (az account get-access-token --resource $adoResourceGuid --query accessToken -o tsv)
-$pr = Invoke-RestMethod `
-  -Uri "https://$org.visualstudio.com/$project/_apis/git/repositories/$repoGuid/pullRequests/$prId?includeWorkItemRefs=true&api-version=7.1" `
-  -Headers @{ Authorization = "Bearer $token" }
-$pr | ConvertTo-Json -Depth 6 | Set-Content "pr-review/$repo/$prId/raw-pr.json"
-```
+`node .copilot-toolkit/scripts/ado-rest.mjs get-pr --org {org} --project {project} --repo-guid {repo-guid} --pr-id {prId} --out pr-review/{repo}/{prId}/raw-pr.json` — saves the PR object. For sovereign clouds add `--resource-guid {ado-resource-guid}`.
 
 ### Mapping to standard `prInfo`
 
@@ -87,20 +75,9 @@ Do NOT use `lastMergeCommit` to determine merge status — it is ADO's merge-pre
 
 Primary path (MCP): `repo_list_pull_request_threads` on the `{registry.ado-repo-server}` server with `repositoryId={repoGuid}`, `pullRequestId={prId}`. Save the returned thread array to `pr-review/$repo/$prId/raw-threads.json`.
 
-Fallback (terminal REST — use only if the MCP call errors out):
+Fallback / `rest` transport:
 
-```pwsh
-$prId = '{prId}'
-$repo = '{repo}'
-$org = '{registry.ado-repo.org}'
-$project = '{registry.ado-repo.project}'
-$repoGuid = '{registry.repo-guid}'
-$token = (az account get-access-token --resource $adoResourceGuid --query accessToken -o tsv)
-$threads = Invoke-RestMethod `
-  -Uri "https://$org.visualstudio.com/$project/_apis/git/repositories/$repoGuid/pullRequests/$prId/threads?api-version=7.1" `
-  -Headers @{ Authorization = "Bearer $token" }
-$threads.value | ConvertTo-Json -Depth 6 | Set-Content "pr-review/$repo/$prId/raw-threads.json"
-```
+`node .copilot-toolkit/scripts/ado-rest.mjs get-threads --org {org} --project {project} --repo-guid {repo-guid} --pr-id {prId} --out pr-review/{repo}/{prId}/raw-threads.json` — saves the thread array (already unwrapped from `.value`).
 
 ### Filtering
 
@@ -154,27 +131,9 @@ Primary path (MCP): `repo_create_pull_request_thread` on the `{registry.ado-repo
 
 > Note: MCP-primary loads the `pr-comment.md` body into main-agent context. The body is typically 20-30 KB; if context pressure is already high, consider the REST fallback below (terminal-only, body never enters main-agent context) and document the choice in the run.
 
-Fallback (terminal REST — ctx-isolated; body never enters main-agent context. Use when MCP fails for auth / tenant reason OR when ctx pressure makes the MCP path risky):
+Fallback / `rest` transport (ctx-isolated — the body never enters main-agent context):
 
-```pwsh
-$prId = '{prId}'
-$repo = '{repo}'
-$repoGuid = '{registry.repo-guid}'
-$org = '{registry.ado-repo.org}'
-$project = '{registry.ado-repo.project}'
-$adoResourceGuid = '{registry.ado-resource-guid OR 499b84ac-1321-427f-aa17-267ca6975798}'
-$body = (Get-Content -Raw "pr-review/$repo/$prId/pr-comment.md")
-$payload = @{
-    comments = @(@{ parentCommentId = 0; content = $body; commentType = 1 })
-    status   = 1
-} | ConvertTo-Json -Depth 5
-$token = (az account get-access-token --resource $adoResourceGuid --query accessToken -o tsv)
-Invoke-RestMethod `
-  -Uri "https://$org.visualstudio.com/$project/_apis/git/repositories/$repoGuid/pullRequests/$prId/threads?api-version=7.1" `
-  -Method POST -Body $payload -ContentType "application/json" `
-  -Headers @{ Authorization = "Bearer $token" } `
-  | Select-Object -Property id, status | ConvertTo-Json
-```
+`node .copilot-toolkit/scripts/ado-rest.mjs post-comment --org {org} --project {project} --repo-guid {repo-guid} --pr-id {prId} --body-file pr-review/{repo}/{prId}/pr-comment.md` — creates a NEW thread and prints `{ threadId, status, commentId }`. For sovereign clouds add `--resource-guid {ado-resource-guid}`.
 
 ### Tenant pitfall
 

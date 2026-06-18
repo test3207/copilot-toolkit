@@ -31,29 +31,7 @@ Each op below documents a `gh` recipe and a REST recipe. `cli` runs `gh`; `rest`
 
 ## getPrInfo
 
-Primary path (terminal `gh` — body never enters main-agent context):
-
-```pwsh
-$prId = '{prId}'
-$repo = '{repo}'
-$owner = '{registry.github-owner}'
-$repo = '{registry.github-repo}'
-$host = '{registry.github-host OR github.com}'
-$repoFlag = if ($host -eq 'github.com') { "$owner/$repo" } else { "$host/$owner/$repo" }
-gh pr view $prId --repo $repoFlag --json `
-  number,title,body,author,headRefName,baseRefName,headRefOid,state,isDraft,createdAt,reviewRequests,reviews,additions,deletions,changedFiles,closingIssuesReferences `
-  > "pr-review/$repo/$prId/raw-pr.json"
-```
-
-Fallback (REST when `gh` is unavailable):
-
-```pwsh
-$token = $env:GITHUB_TOKEN  # or gh auth token
-$apiBase = if ($host -eq 'github.com') { 'https://api.github.com' } else { "https://$host/api/v3" }
-Invoke-RestMethod -Uri "$apiBase/repos/$owner/$repo/pulls/$prId" `
-  -Headers @{ Authorization = "Bearer $token"; Accept = 'application/vnd.github+json' } `
-  | ConvertTo-Json -Depth 6 | Set-Content "pr-review/$repo/$prId/raw-pr.json"
-```
+`node .copilot-toolkit/scripts/github-rest.mjs get-pr --owner {github-owner} --repo {github-repo} --pr-id {prId} --out pr-review/{repo}/{prId}/raw-pr.json` (add `--host {github-host}` for GHES) — prefers the authenticated `gh` CLI, falls back to REST + `GITHUB_TOKEN` automatically. Saves the PR object with the fields the mapping below needs.
 
 ### Mapping to standard `prInfo`
 
@@ -75,19 +53,9 @@ Invoke-RestMethod -Uri "$apiBase/repos/$owner/$repo/pulls/$prId" `
 
 ## getThreads
 
-GitHub PRs have two distinct comment surfaces — fetch BOTH:
+GitHub PRs have two distinct comment surfaces — the script fetches BOTH into one file:
 
-1. **Issue comments** (general PR conversation, posted via "Add a comment"):
-
-   ```pwsh
-   gh pr view $prId --repo $repoFlag --comments > "pr-review/$repo/$prId/raw-issue-comments.txt"
-   ```
-
-2. **Review comments** (file-anchored, posted via "Review changes"):
-
-   ```pwsh
-   gh api "repos/$owner/$repo/pulls/$prId/comments" > "pr-review/$repo/$prId/raw-review-comments.json"
-   ```
+`node .copilot-toolkit/scripts/github-rest.mjs get-threads --owner {github-owner} --repo {github-repo} --pr-id {prId} --out pr-review/{repo}/{prId}/raw-threads.json` (add `--host {github-host}` for GHES) → `{ issueComments: [...], reviewComments: [...] }`. `issueComments` = general PR conversation ("Add a comment"); `reviewComments` = file-anchored ("Review changes").
 
 ### Filtering
 
@@ -99,12 +67,7 @@ GitHub PRs have two distinct comment surfaces — fetch BOTH:
 
 Optional override of Step 4's default (`git --no-pager diff origin/{target}...HEAD`). Use it **only** as a fallback when that three-dot diff is empty because the PR is already merged (its head is an ancestor of the target) -- e.g. a Step 1 override that reviews a merged PR. `gh pr diff` returns the canonical PR patch regardless of merge state:
 
-```pwsh
-# $repoFlag is built exactly as in getPrInfo (host-qualified for GHES)
-$prId = '{prId}'
-$repo = '{repo}'
-gh pr diff $prId --repo $repoFlag > "pr-review/$repo/$prId/diff.txt"
-```
+`node .copilot-toolkit/scripts/github-rest.mjs get-diff --owner {github-owner} --repo {github-repo} --pr-id {prId} --out pr-review/{repo}/{prId}/diff.txt` (add `--host {github-host}` for GHES) — the canonical PR patch regardless of merge state.
 
 ## fileLinkTemplate
 
@@ -169,32 +132,7 @@ Patterns NOT matched by `@<word>` (safe):
 
 ## postComment
 
-Primary path (`gh` CLI — body never re-enters main-agent context):
-
-```pwsh
-$prId = '{prId}'
-$repo = '{repo}'
-$owner = '{registry.github-owner}'
-$repo = '{registry.github-repo}'
-$host = '{registry.github-host OR github.com}'
-$repoFlag = if ($host -eq 'github.com') { "$owner/$repo" } else { "$host/$owner/$repo" }
-gh pr comment $prId --repo $repoFlag --body-file "pr-review/$repo/$prId/pr-comment.md"
-```
-
-Returns the URL of the posted comment.
-
-Fallback (REST when `gh` is unavailable):
-
-```pwsh
-$token = $env:GITHUB_TOKEN
-$apiBase = if ($host -eq 'github.com') { 'https://api.github.com' } else { "https://$host/api/v3" }
-$body = Get-Content -Raw "pr-review/$repo/$prId/pr-comment.md"
-$payload = @{ body = $body } | ConvertTo-Json -Depth 3
-Invoke-RestMethod -Uri "$apiBase/repos/$owner/$repo/issues/$prId/comments" `
-  -Method POST -Body $payload -ContentType 'application/json' `
-  -Headers @{ Authorization = "Bearer $token"; Accept = 'application/vnd.github+json' } `
-  | Select-Object -Property id, html_url | ConvertTo-Json
-```
+`node .copilot-toolkit/scripts/github-rest.mjs post-comment --owner {github-owner} --repo {github-repo} --pr-id {prId} --body-file pr-review/{repo}/{prId}/pr-comment.md` (add `--host {github-host}` for GHES) — creates a top-level PR comment and prints `{ url }`. Prefers `gh`; falls back to REST + `GITHUB_TOKEN`.
 
 ### Why issue comment, not review
 
