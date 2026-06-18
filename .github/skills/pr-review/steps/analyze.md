@@ -60,7 +60,7 @@ Intent: {one-line from Step 6}
 Change Type: {Step 6}
 Repo path: {registry.path}
 Target branch: {targetBranch}
-Changed files: see tmp/pr-{prId}-diff.txt
+Changed files: see pr-review/{prId}/diff.txt
 Anti-pattern groups to load: {list of file paths from Step 6 scan}
 Repo coding-standards: {list from registry, or language-autodetected in derive mode -- Step 6}
 

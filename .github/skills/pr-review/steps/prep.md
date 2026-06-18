@@ -35,8 +35,12 @@ git --no-pager diff --name-only origin/{targetBranchName}...HEAD
 git --no-pager diff --stat origin/{targetBranchName}...HEAD
 # MANDATORY: persist the full patch so Step 7 subagents can read it without re-running git diff.
 # The Step 7 dispatch template references this exact path; do NOT skip this command.
-New-Item -ItemType Directory -Force -Path tmp | Out-Null
-git --no-pager diff origin/{targetBranchName}...HEAD > tmp/pr-{prId}-diff.txt
+$prId = '{prId}'
+New-Item -ItemType Directory -Force -Path "pr-review/$prId" | Out-Null
+# Self-ignore: drop a .gitignore so the whole pr-review/ output tree stays out of the
+# consumer's git regardless of their root .gitignore / sync state (portable to the plugin too).
+Set-Content -Path "pr-review/.gitignore" -Value '*'
+git --no-pager diff origin/{targetBranchName}...HEAD > "pr-review/$prId/diff.txt"
 ```
 
 **Context budget signal**: If changed files > 30 OR diff lines > 800, set `contextPressure = high`. This signals only -- subagents in Step 7 are mandatory regardless of this flag.

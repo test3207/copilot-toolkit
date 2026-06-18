@@ -31,7 +31,7 @@ When NOT to use it:
 | Item | Value |
 | ---- | ----- |
 | Skill version | `v1.0` (skill conversion of pr-review tool v3.3.0) |
-| Working dir | `pr-review/{prId}/sections/*.md` per-section files; `pr-review/{prId}/review.md` is the terminal-concat artifact. |
+| Working dir | `pr-review/{prId}/sections/*.md` per-section files; `pr-review/{prId}/review.md` is the terminal-concat artifact; the persisted diff is `pr-review/{prId}/diff.txt`. All output lives under `pr-review/`, which the skill self-ignores via a generated `pr-review/.gitignore` (`*`) on first run -- portable, needs no consumer root `.gitignore` or sync. |
 | Providers | [providers/ado.md](./providers/ado.md), [providers/github.md](./providers/github.md). Add a new file under `providers/` for new hosts; no workflow edits required. |
 | Subagents | `.github/agents/pr-logic-reviewer.md` (7a) · `.github/agents/pr-impact-analyzer.md` (7b) · `.github/agents/pr-quality-checker.md` (7c) · `.github/agents/pr-finding-validator.md` (7d). |
 
