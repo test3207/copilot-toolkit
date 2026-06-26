@@ -11,6 +11,7 @@ These rules apply to ALL behavioral anti-pattern checks:
 3. **Always flag, never assume intent**: Even if a behavioral change appears intentional, always classify as Bug (potential) and present the most dangerous concrete example. The reviewer cannot know if the author considered all consumers. Let the author confirm correctness.
 4. **Concrete example rule**: Construct the simplest possible repro -- not the most complex edge case. If a normal user flow triggers it, that IS the example.
 5. **Dead code implies lost functionality**: When dead code is found (code that can never execute), always ask: "What function was this code supposed to serve? Is anything else providing it?" If nothing provides it, escalate to Bug (potential).
+6. **Dataflow value consistency**: When a PR changes *how a value is constructed or encoded*, and that value **leaves the current function boundary** (written to config, serialized, passed to an external API, used as an access scope), identify every site that **produces or consumes** the same logical value and confirm the construction/parse conventions on both ends still match. This upgrades the upstream/downstream partner check from *connectivity* (does the relationship exist) to *value consistency* (do both ends agree on the value). Covers identifier mismatch (see BAP-13), serialization asymmetry, and unit drift. Out of scope (until a real case drives them): state-machine / ordering invariants with no single value-construction site.
 
 ## Quick Index
 
@@ -28,6 +29,7 @@ These rules apply to ALL behavioral anti-pattern checks:
 | BAP-10 | Subscription Setup Order Dependency | Medium | Subscription/handler registration reordered | [ts-react](lang/typescript-react.md) |
 | BAP-11 | Computed Side-Effect Timing Shift | Medium | `ko.computed` to `ko.pureComputed` migration | [ts-react](lang/typescript-react.md) |
 | BAP-12 | Dead Mechanism Substitution | High | Multiple params changed on shared component call site | [control-flow](control-flow.md) |
+| BAP-13 | Cross-Boundary Identifier Consistency | High | Identifier/name/key/path/scope construction changes and crosses a boundary | [semantic](semantic.md) |
 | TSR-01 | Cross-Framework File Sharing | High | Import across a KO↔React boundary | [ts-react](lang/typescript-react.md) |
 | TSR-02 | React Unit-Test Gap (KO exempt) | Medium | New/changed React code without tests | [ts-react](lang/typescript-react.md) |
 | TSR-03 | Parallel KO/React Divergence | Medium | One side of a dual KO/React feature changed | [ts-react](lang/typescript-react.md) |
@@ -38,7 +40,7 @@ These rules apply to ALL behavioral anti-pattern checks:
 
 | Group | File | Patterns | Primary consumer |
 | ----- | ---- | -------- | ---------------- |
-| Semantic & Shared | [semantic.md](semantic.md) | BAP-01, 02, 08 | pr-impact-analyzer |
+| Semantic & Shared | [semantic.md](semantic.md) | BAP-01, 02, 08, 13 | pr-impact-analyzer |
 | Control Flow & Guards | [control-flow.md](control-flow.md) | BAP-03, 04, 05, 12 | pr-logic-reviewer |
 | Async & Type Safety | [async-types.md](async-types.md) | BAP-07, 09 | both |
 
@@ -68,6 +70,7 @@ Main agent scans diff triggers + detected language, and tells subagents which gr
 
 ```text
 IF diff changes shared function behavior/signature/defaults OR adds field to a serialized model/DTO/resource → load semantic.md
+IF diff changes how an identifier/name/key/path/scope is constructed AND that value crosses a boundary       → load semantic.md
 IF diff restructures control flow / adds guards            → load control-flow.md
 IF diff changes multiple params on a shared component call  → load control-flow.md
 IF diff adds async ops / new enum values                   → load async-types.md

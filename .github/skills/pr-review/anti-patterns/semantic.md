@@ -79,3 +79,28 @@ function getResources(includeDeleted = false) { ... }
 function getResources(includeDeleted = true) { ... }
 // Every caller that relied on the old default now includes deleted resources
 ```
+
+---
+
+## BAP-13: Cross-Boundary Identifier Consistency
+
+**Severity**: High
+**Applies when**: The diff changes how an identifier is constructed (string concat with a prefix/suffix, an id/key/path/URL/scope builder, a serialized-config value) AND that identifier crosses a process/system boundary (passed to an external API, written into a config/property bag, used as an access **scope**, serialized for another reader)
+
+**What looks safe**: The new construction is locally correct; types unchanged
+**What breaks**: A *sibling* construction of the **same logical identifier** elsewhere (often in unchanged code) was not updated, so the two now produce different strings for what must be the same external resource. Special case -- **grant vs use**: an access grant (role assignment, ACL, key-vault policy) is scoped to identifier A while the consumer operates on identifier B; silent authorization failure.
+
+**Detection**: When an identifier construction changes, `grep_search` for every other site that builds the same logical identifier (same helper, same prefix constant, same field name). Build a table -- include sites **outside the diff**:
+
+| Construction site | File:Line | Produces (for the same input) | Matches the changed site? |
+| ----------------- | --------- | ----------------------------- | ------------------------- |
+
+If any access grant's scope identifier and the corresponding consumer's target identifier can differ for the same logical resource, flag as Bug (potential), severity High.
+
+**Example**:
+
+```text
+// grant path:   scope  = `${prefix}-${region}-regional`
+// consume path: target = `${prefix}-${region}`        // sibling builder, suffix missing
+// -> permission granted on one resource group, operation runs on another -> authorization failure
+```
