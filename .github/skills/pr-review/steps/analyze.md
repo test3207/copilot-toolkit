@@ -10,6 +10,7 @@ Sourced from [workflow.md](../workflow.md). Step 6 is main-agent inline; Step 7 
 4. **Anti-pattern trigger scan + language detection** (lightweight, no source-file reads): from the file list + diff stats only, decide which group files each subagent should load.
    - Core groups (concern-based, language-agnostic):
      - `IF diff changes shared function behavior/signature/defaults OR adds field to a serialized resource model -> semantic.md`
+     - `IF diff changes how an identifier/name/key/path/scope is constructed AND that value crosses a boundary -> semantic.md`
      - `IF diff restructures control flow / adds guards / multiple params on shared component call -> control-flow.md`
      - `IF diff adds async ops / new enum values -> async-types.md`
    - Language packs (by changed-file extension; see `anti-patterns/index.md` -> Language Packs):

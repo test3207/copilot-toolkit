@@ -114,6 +114,8 @@ For each modified function/method:
 
 **Co-writer audit (BAP-01 detection step 3)**: When the diff adds a new field to a serialized resource model (model factory entry, property bag, schema column, REST DTO), also search for ALL OTHER call sites that PATCH/PUT/POST the same resource type (e.g., `patchResource`, `putResource`, `createOrUpdate`). Build a co-writer table per BAP-01: each row records whether the co-writer models the new field, uses a generic round-trip, and whether any field name overlaps (outer DTO + inner serialized entries). Add a **Repro action** column: the SHORTEST user action that reaches the backend response / persisted state (NOT a UI-render-only smoke test).
 
+**Cross-boundary identifier audit (BAP-13 detection)**: When the diff changes how an identifier/name/key/path/URL/access-scope is constructed (prefix/suffix concat, an id/key/scope builder, a serialized-config value) AND that identifier crosses a process/system boundary, `grep_search` for every OTHER site that builds the same logical identifier (same helper, same prefix constant, same field name) -- including sites OUTSIDE the diff. Tabulate `construction site | file:line | produces (for the same input) | matches the changed site?`. Special case -- grant vs use: if an access grant (role assignment / ACL / policy) is scoped to identifier A while the consumer operates on identifier B for the same logical resource, flag as Bug (potential), High.
+
 Verify chain integrity:
 
 | Check | Question |
@@ -123,6 +125,7 @@ Verify chain integrity:
 | Input domain | What types of values does each caller actually pass (ARM ID, plain string, null)? Do all input domains produce correct results with the new code? |
 | Side effects | Are there unexpected side effects on the chain? |
 | Missing updates | Do callers need to be updated but weren't? |
+| Value consistency | When an identifier/value construction changes and crosses a boundary, do ALL sibling sites that build the same logical value still produce the same string? (BAP-13 / dataflow value consistency) |
 
 ### 2. Regression Risk Assessment
 
@@ -138,7 +141,7 @@ Evaluate risk of breaking existing functionality:
 
 ### 3. Anti-pattern Scan (in your context)
 
-For each anti-pattern group file the main agent told you to load (typically `semantic.md`), check triggers and apply detection steps. Pay special attention to BAP-01 (Semantic Contract Violation), BAP-02 (Parameter Semantic Overload), BAP-05 (Guard State Reachability), BAP-08 (Default Parameter Widening). Apply global detection rules from `anti-patterns/index.md`.
+For each anti-pattern group file the main agent told you to load (typically `semantic.md`), check triggers and apply detection steps. Pay special attention to BAP-01 (Semantic Contract Violation), BAP-02 (Parameter Semantic Overload), BAP-05 (Guard State Reachability), BAP-08 (Default Parameter Widening), BAP-13 (Cross-Boundary Identifier Consistency). Apply global detection rules from `anti-patterns/index.md`.
 
 ## Section File Format
 
