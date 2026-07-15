@@ -26,8 +26,10 @@ Every `providers/{name}.md` MUST contain these sections, in this order, with the
 
 Optional sections (use when applicable):
 
-- `## fetchDiff` — override if the platform needs something other than `git diff origin/{target}...HEAD`.
-- `## checkoutBranch` — override if the platform needs something other than `git fetch origin {ref}; git checkout {ref}`.
+- `## fetchDiff` — override if the platform needs something other than `git diff origin/{target}...origin/{source}`.
+- `## setupWorktree` — documents a platform-specific source-ref fetch when `git fetch origin {sourceBranch}` can't resolve the PR head (e.g. a GitHub fork PR, whose head is not on `origin` — it lives at `refs/pull/{prId}/head`). Step 3's `scripts/pr-review-worktree.mjs setup` owns the entire worktree flow (availability probe, output scaffold + self-ignore, pre-clean/prune, fetch source+target, detached add, optional enrichment, diff + submodule-bump summary) and fetches `origin/{sourceBranch}`; it does not yet accept a custom source ref, so **fork-PR review is not currently supported** on any provider. The searchable worktree always lands at `pr-review-worktree/{repo}/{prId}/worktree` (NOT ignored) and outputs at `pr-review/{repo}/{prId}` (self-ignored) — Step 4 and Step 7 subagents hard-code those locations.
+
+**Worktree enrichment config precedence** (the `worktree` block: `{ submodules, setup }`): reviewed-repo `.github/pr-review.json` `worktree` > registry entry `worktree` (passed to the script via `--config`) > default OFF. This block is L3-owned, so it wins even in registry mode (the one documented exception to "registry mode ignores `pr-review.json`"); orchestration fields (`pr-platform`, `path`, `repo-guid`, …) still follow the normal registry-wins rule. The script reads the L3 block from the **base checkout**, never the PR source, so a PR can't inject `setup` commands. Enrichment is opt-in / trusted-repos-only and always degrades to a non-blocking warning on failure. See SKILL.md → *Optional `.github/pr-review.json`*.
 
 ### Standard `prInfo` object
 
@@ -73,7 +75,7 @@ Each row:
 | `#\d+` | (GitHub) issue/PR with that number | `[N]` for finding refs, `Issue N` (no `#`) for issue refs |
 ```
 
-Workflow Step 9.1b runs `Select-String -Path pr-comment.md -Pattern <each-pattern>`. Any match aborts the post.
+Workflow Step 9.1b writes these patterns to `link-patterns.json` and passes it to `pr-review-assemble.mjs lint`; any match makes the gate exit 3 and aborts the post.
 
 ## Defaulting + missing provider
 

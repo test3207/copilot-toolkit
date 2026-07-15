@@ -55,6 +55,13 @@ or auth prompt = silent hang.
   timeout + closed stdin + pager defang).
   - Usage: `pwsh -File .copilot-toolkit/scripts/run-safe.ps1 -Command "<cmd>" -TimeoutSec <n>`
   - Returns `124` on timeout (process killed).
+- **No inline temp scripts -- write a `.mjs`, then run it.** If logic needs more than a
+  single command (loops, JSON parsing, multi-step git, conditionals), write a Node
+  ES-module to a file and run `node <file>` -- do NOT assemble a multi-line
+  `pwsh`/`bash` blob on the terminal. Inline shell breaks on cross-platform
+  quoting/escaping (e.g. `pwsh -File` vs `-Command` arg binding) and is unreadable in
+  history. Node is the one runtime every consumer has (preflight enforces it). Single
+  commands (`git --no-pager ...`, `node scripts/x.mjs ...`) stay inline.
 - Never `Start-Sleep` to wait for a previous command -- you get auto-notified when
   it completes.
 - For env-level git defang in long scripts:

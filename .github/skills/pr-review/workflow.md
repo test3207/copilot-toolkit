@@ -48,9 +48,9 @@ Workflow is split into three step files to keep this orchestrator under budget. 
 
 | File | Steps | Read when |
 | ---- | ----- | --------- |
-| [steps/prep.md](steps/prep.md) | 0–5: resolve provider, PR info, threads, checkout, diff, section dir + header | After todo list is built; before Step 0. |
+| [steps/prep.md](steps/prep.md) | 0–5: resolve provider, PR info, threads, isolated worktree, diff, section dir + header | After todo list is built; before Step 0. |
 | [steps/analyze.md](steps/analyze.md) | 6–7: intent + MANDATORY parallel subagent dispatch (7a/b/c) + conditional 7d validator | After Step 5 completes. |
-| [steps/finalize.md](steps/finalize.md) | 8–9: verdict + Action Items + assemble + post + return-to-target | After Step 7 (or 7d) completes. |
+| [steps/finalize.md](steps/finalize.md) | 8–9: verdict + Action Items + assemble + post + remove worktree | After Step 7 (or 7d) completes. |
 
 Cross-file references: subagent prompts (in `.github/agents/pr-*.md`) call out "Step 9.1b hard gate" by name only -- they do not read the workflow files. The file-link safe-replacement table they need is in `providers/{pr-platform}.md`, not here.
 
@@ -72,7 +72,7 @@ Do NOT:
 
 ```text
 0:   Resolve provider (registry.pr-platform -> providers/{name}.md)
-1-4: PR info (provider getPrInfo) + comments (provider getThreads) + checkout + diff
+1-4: PR info (provider getPrInfo) + comments (provider getThreads) + isolated worktree + diff
   v
 5:   Create sections dir + write 00-header.md (main agent)
   v
@@ -90,5 +90,5 @@ Do NOT:
   v
 9.1: Terminal concat sections -> review.md
 9.2: Provider postComment (pr-comment.md body -> PR thread)
-9.3: git checkout {targetBranch}
+9.3: git worktree remove (delete per-review worktree; user's tree was never touched)
 ```

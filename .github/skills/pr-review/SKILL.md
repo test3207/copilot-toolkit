@@ -31,8 +31,8 @@ When NOT to use it:
 | Item | Value |
 | ---- | ----- |
 | Tool name | `pr-review` |
-| Tool version | `v3.4.1` |
-| Working dir | `pr-review/{repo}/{prId}/sections/*.md` per-section files; `pr-review/{repo}/{prId}/review.md` is the terminal-concat artifact; the persisted diff is `pr-review/{repo}/{prId}/diff.txt`. All output lives under `pr-review/`, which the skill self-ignores via a generated `pr-review/.gitignore` (`*`) on first run -- portable, needs no consumer root `.gitignore` or sync. |
+| Tool version | `v3.5.0` |
+| Working dir | `pr-review/{repo}/{prId}/sections/*.md` per-section files; `pr-review/{repo}/{prId}/review.md` is the terminal-concat artifact; the persisted diff is `pr-review/{repo}/{prId}/diff.txt`. All OUTPUT lives under `pr-review/`, which the skill self-ignores via a generated `pr-review/.gitignore` (`*`) on first run -- portable, needs no consumer root `.gitignore` or sync. The PR source branch is checked out into an isolated, SEARCHABLE worktree at `pr-review-worktree/{repo}/{prId}/worktree/` (Step 3, via `scripts/pr-review-worktree.mjs`) -- a SEPARATE, NON-ignored tree so VS Code grep / file / semantic search reach it directly. Reviews never mutate the user's working tree and reviews of different PRs run in parallel. Every git call runs against `{repoContext.path}` (`git -C`), so the reviewed repo may be the workspace root (plugin mode) or a submodule (L2 mode). |
 | Providers | [providers/ado.md](./providers/ado.md), [providers/github.md](./providers/github.md). Add a new file under `providers/` for new hosts; no workflow edits required. |
 | Subagents | `.github/agents/pr-logic-reviewer.md` (7a) · `.github/agents/pr-impact-analyzer.md` (7b) · `.github/agents/pr-quality-checker.md` (7c) · `.github/agents/pr-finding-validator.md` (7d). |
 
@@ -61,11 +61,17 @@ A consumer-owned file at the **reviewed repo's** root, used only in derive mode 
   "target-branch": "main",          // override; normally taken from the PR object
   "coding-standards": ["common.md", "typescript.md"],  // override language autodetect
   "anti-pattern-allowlist": ["semantic.md", "control-flow.md"],  // restrict groups
-  "pr-template": ".github/pull_request_template.md"   // enable template checks
+  "pr-template": ".github/pull_request_template.md",   // enable template checks
+  "worktree": {                     // OPT-IN worktree enrichment (TRUSTED repos only; default OFF)
+    "submodules": false,            // false | true | "recursive" — `git submodule update --init [--recursive]` in the worktree
+    "setup": ["npm ci"]             // shell commands run in the worktree so subagents get type info (get_errors, listCodeUsages)
+  }
 }
 ```
 
 Any present field augments/overrides the corresponding derived value. The schema mirrors the registry entry keys so registry mode and derive mode stay interchangeable.
+
+**The `worktree` block is the one exception to "registry mode ignores this file".** It is L3-owned (the repo knows its own build), so its precedence is **reviewed-repo `.github/pr-review.json` > registry entry `worktree` > default OFF** — even in registry mode. Step 3's `scripts/pr-review-worktree.mjs` reads it from the **base checkout** (never the PR source branch), so a malicious PR cannot inject `setup` commands. Enable it **only for repos you trust**: `submodules` exercises the recursive-clone RCE surface (CVE-2018-11235) and `setup` runs arbitrary shell (postinstall RCE). Any enrichment failure degrades to a non-blocking warning; when nothing is configured in plugin mode the script emits a one-line hint the main agent surfaces once.
 
 ## Workflow
 
@@ -90,7 +96,7 @@ Orchestration entry point is [workflow.md](./workflow.md); it indexes three step
 5. Never skip steps or execute without todo tracking.
 ```
 
-**Key Principle**: Checkout PR branch locally; subagents do deep analysis in their own contexts and write directly to section files. Main agent never reads source files inline; main agent never reads back full subagent payloads.
+**Key Principle**: Check out the PR source branch into an isolated git worktree (parallel-safe; never touches the user's working tree); subagents do deep analysis in their own contexts and write directly to section files. Main agent never reads source files inline; main agent never reads back full subagent payloads.
 
 ## PR Comment Rules
 
@@ -110,7 +116,7 @@ When posting review comments to PR:
 
    - `<model_name>`: state your exact model name as defined in your system instructions. Do not guess.
    - `<tool_name>`: the **Tool name** value from the Quick Reference table above (currently `pr-review`). Use exactly that string.
-   - `<tool_version>`: the **Tool version** value from the Quick Reference table above (currently `v3.4.1`). Use exactly that string -- do not substitute a different version.
+   - `<tool_version>`: the **Tool version** value from the Quick Reference table above (currently `v3.5.0`). Use exactly that string -- do not substitute a different version.
 4. **Post the full assembled body** — the section template concats TL;DR + Action Items + Intent + Validation (+ ICM if applicable). Do NOT condense or rewrite from memory.
 5. **ICM Comment is NOT posted to PR** — it is saved in `sections/90-icm.md` for manual copy-paste.
 

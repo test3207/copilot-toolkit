@@ -20,7 +20,7 @@ The main agent operates ONLY on the compact summaries returned by 7a-7d. Do NOT 
    - Zero items survive -> write `(none)`. Do NOT invent items.
 3. Write `pr-review/{repo}/{prId}/sections/05-tldr.md`. See [reference.md](../reference.md#tldr-section-file-template) for template.
 4. IF this PR fixes an ICM incident -> write `pr-review/{repo}/{prId}/sections/90-icm.md` with the ICM-comment template from [reference.md](../reference.md#icm-comment-section-file-template). Otherwise skip (the section won't be included in the concat).
-5. Build `pr-review/{repo}/{prId}/pr-comment.md` -- this is the verbatim PR-comment body. **Curated content only**: AI header + TL;DR (with Action Items) + Intent + Validation (chain per blocking item) + ICM-if-applicable + footer. Raw subagent sections (20-logic / 30-impact / 40-quality) are deliberately excluded -- every actionable finding is already in the validator-curated Action Items + Validation, and including the raw analyses would duplicate each Bug/High/Medium finding 2-3x. The full per-call-site tables / call chains / smell tables stay in `review.md` for local exploration. See [reference.md](../reference.md#pr-comment-artifact-template) for the assembly recipe. Use terminal `Get-Content` concat to pull section bodies in (no `read_file`). This file lives OUTSIDE `sections/` so it does not get duplicated by the `review.md` concat in Step 9.1.
+5. Build `pr-review/{repo}/{prId}/pr-comment.md` -- this is the verbatim PR-comment body. **Curated content only**: AI header + TL;DR (with Action Items) + Intent + Validation (chain per blocking item) + ICM-if-applicable + footer. Raw subagent sections (20-logic / 30-impact / 40-quality) are deliberately excluded -- every actionable finding is already in the validator-curated Action Items + Validation, and including the raw analyses would duplicate each Bug/High/Medium finding 2-3x. The full per-call-site tables / call chains / smell tables stay in `review.md` for local exploration. See [reference.md](../reference.md#pr-comment-artifact-template) for the `pr-review-assemble.mjs comment` recipe that assembles it from the section files (no `read_file`). This file lives OUTSIDE `sections/` so it does not get duplicated by the `review.md` concat in Step 9.1.
 6. IF `contextPressure = high` from Step 4: append a Coverage Note inside `05-tldr.md` listing analyzed / sampled / skipped files.
 
 ---
@@ -29,48 +29,24 @@ The main agent operates ONLY on the compact summaries returned by 7a-7d. Do NOT 
 
 ### 9.1 Assemble `review.md` (terminal concat -- no context load)
 
-```pwsh
-$prId = '{prId}'
-$repo = '{repo}'
-# Explicit blank-line delimiter between sections. Plain Get-Content -Raw | Set-Content concatenates without a separator,
-# so any section file missing a trailing newline collapses into the next heading. TrimEnd + -join '`n`n' is safe regardless.
-$sections = Get-ChildItem "pr-review/$repo/$prId/sections/*.md" | Sort-Object Name
-$body = ($sections | ForEach-Object { (Get-Content -Raw $_.FullName).TrimEnd("`r","`n") }) -join "`n`n"
-($body + "`n") | Set-Content -Encoding UTF8 "pr-review/$repo/$prId/review.md"
+```sh
+node .copilot-toolkit/scripts/pr-review-assemble.mjs review --repo {repo} --pr-id {prId}
 ```
+
+Concatenates `sections/*.md` (filename order) into `review.md` with an explicit blank-line delimiter, so a section missing a trailing newline never collapses into the next heading.
 
 ### 9.1b File-link + auto-link sanity check (HARD GATE before posting)
 
-```pwsh
-$prId = '{prId}'
-$repo = '{repo}'
-# Check 1: any markdown link whose target is not an absolute URL is a workspace-relative path -- forbidden in the posted comment.
-$badLinks = Select-String -Path "pr-review/$repo/$prId/pr-comment.md" -Pattern '\]\((?!https?:|mailto:|#)' -AllMatches
+Write the provider's `forbiddenAutoLinkPatterns` (built in Step 5) to a JSON file with `create_file`, then run the gate:
 
-# Check 2: each forbiddenAutoLinkPatterns entry from the provider (built in Step 5). Loop and abort on any match.
-# The patterns + safe replacements live in providers/{pr-platform}.md; the agent runs one Select-String per row.
-$violations = @()
-foreach ($p in $forbiddenAutoLinkPatterns) {
-    $hits = Select-String -Path "pr-review/$repo/$prId/pr-comment.md" -Pattern $p.pattern -AllMatches
-    if ($hits) {
-        $violations += [pscustomobject]@{ pattern = $p.pattern; autoLinksTo = $p.autoLinksTo; safe = $p.safeReplacement; hits = $hits }
-    }
-}
-
-if ($badLinks) {
-    Write-Error "Found workspace-relative links in pr-comment.md -- fix before posting:`n$($badLinks | Out-String)"
-}
-if ($violations) {
-    Write-Error "Found auto-link patterns in pr-comment.md. Replace per providers/{pr-platform}.md autoLinkForbiddenPatterns:`n$($violations | ConvertTo-Json -Depth 4)"
-}
-if ($badLinks -or $violations) {
-    # ABORT: rewrite the offending section files (see your provider's fileLinkTemplate + autoLinkForbiddenPatterns) then re-run 9.1
-} else {
-    Write-Host "OK: all file links absolute, no auto-link patterns."
-}
+```sh
+node .copilot-toolkit/scripts/pr-review-assemble.mjs lint --repo {repo} --pr-id {prId} \
+  --patterns pr-review/{repo}/{prId}/link-patterns.json
 ```
 
-IF either check fails -> STOP. Edit the offending section file(s) directly with `replace_string_in_file`, re-run 9.1 to rebuild review.md, then re-run 9.1b. Do NOT proceed to 9.2 with violations. For the safe replacement to use, look up the matched pattern in `providers/{pr-platform}.md` autoLinkForbiddenPatterns.
+`link-patterns.json` is a JSON array `[{ "pattern", "autoLinksTo", "safeReplacement" }, ...]` copied from the provider's `autoLinkForbiddenPatterns` table (omit `--patterns` only if the provider defines none). The gate checks (1) any markdown link whose target is not an absolute URL / anchor (workspace-relative -- forbidden), and (2) each provider pattern.
+
+Exit `0` = clean, proceed. Exit `3` = the JSON stdout lists `relativeLinks` and `autoLinks` (each with line numbers + the safe replacement) -> STOP: edit the offending section file(s) with `replace_string_in_file`, re-run 9.1 to rebuild `review.md`, then re-run 9.1b. Do NOT proceed to 9.2 with violations.
 
 ### 9.2 Post PR Comment
 
@@ -78,10 +54,15 @@ Run the **postComment** recipe for the access method resolved in Step 0 (from `p
 
 - `mcp` / `cli` / `rest`: post via that method's recipe. For `mcp`, fall through to the REST recipe only if the call fails for an auth / tenant / availability reason, or when the provider's Note flags a ctx tradeoff worth taking.
 
-### 9.3 Return to develop
+### 9.3 Remove the isolated worktree
 
-```pwsh
-git checkout {targetBranch}
+The review never touched the user's working tree, so there's nothing to restore -- just delete the per-review worktree. The same script that built it tears it down (idempotent: a partially failed run may have already removed it):
+
+```sh
+node .copilot-toolkit/scripts/pr-review-worktree.mjs cleanup \
+  --repo-path {repoContext.path} --repo {repo} --pr-id {prId}
 ```
+
+This runs `git -C {repoContext.path} worktree remove --force` + `prune` and deletes the `pr-review-worktree/{repo}/{prId}/worktree` dir. The output `*.md` files under `pr-review/{repo}/{prId}` live in the separate self-ignored tree and stay.
 
 > ICM Comment is NOT posted automatically. It is saved in `90-icm.md` for the user to copy-paste into ICM when the PR fixes an incident.

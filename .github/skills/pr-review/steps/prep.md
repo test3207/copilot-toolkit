@@ -20,45 +20,57 @@ Run the **getPrInfo** recipe from `providers/{pr-platform}.md`. Extract the stan
 
 Run the **getThreads** recipe from `providers/{pr-platform}.md`. Filter out bot/system messages per the provider's filtering guidance. Note existing feedback and open issues to avoid duplicate comments.
 
-## Step 3: Checkout PR Branch
+## Step 3: Create Isolated Worktree (parallel-safe)
 
-```pwsh
-git --no-pager fetch origin {sourceBranchName}
-git --no-pager fetch origin {targetBranchName}
-git checkout {sourceBranchName}
+Instead of checking the PR branch out in the shared working tree (which fights concurrent reviews and disturbs the user's own checkout), create a dedicated git worktree per review. Two reviews of different PRs run in parallel because each gets its own detached HEAD; the user's working tree is never touched.
+
+`scripts/pr-review-worktree.mjs` does all the deterministic git glue in one Node run (the "recipe glue = Node script" rule -- no inline multi-step shell): probe worktree availability, scaffold the self-ignored output tree, pre-clean/prune any interrupted prior run, fetch source + target, add the detached worktree, run optional enrichment, then compute the diff + submodule-bump summary. Every git call runs against `{repoContext.path}` via `git -C`, so it works whether the reviewed repo is the workspace root (`path: "."`, plugin mode) or a git submodule (`path: "repos/<name>"`, L2 mode).
+
+**Enrichment config (optional)**: the script reads the reviewed repo's own `.github/pr-review.json` `worktree` block (L3, from the base checkout) automatically. If instead the registry entry carries a `worktree` block (L2), write it to a JSON file with `create_file` (e.g. `pr-review/{repo}/{prId}/worktree-config.json`) and pass `--config <that path>` -- L3 still overrides L2 if both exist. If the registry has no `worktree` block, omit `--config`. See `providers/_index.md` → *Worktree enrichment config precedence*.
+
+```sh
+node .copilot-toolkit/scripts/pr-review-worktree.mjs setup \
+  --repo-path {repoContext.path} --repo {repo} --pr-id {prId} \
+  --source {sourceBranch} --target {targetBranch}
 ```
 
-> Fetching both branches avoids the stale-diff issue (B-031): if local `origin/{targetBranchName}` is behind, the `target...HEAD` diff includes surplus context that no longer exists on the effective merge target.
+The script prints ONE JSON object to stdout -- capture it as `worktreeInfo`:
+
+| Field | Use |
+| ----- | --- |
+| `worktree` | Absolute path of the searchable worktree (`pr-review-worktree/{repo}/{prId}/worktree`, NOT ignored). Subagents grep/read here. |
+| `outDir` | `pr-review/{repo}/{prId}` (self-ignored) -- holds `diff.txt`, `changed-files.txt`, sections. |
+| `diffFile` | Full-patch path for Step 7 subagents. |
+| `changedFiles` / `additions` / `deletions` | Change-size signal for Step 4. |
+| `submoduleBumps` | `[{ path, from, to, commits? }]` gitlink pointer bumps (empty for most PRs; `commits` present only when submodule enrichment resolved the range). |
+| `enrichment` | `{ submodules, configSource, submoduleUpdate, setup, hint? }` -- what the opt-in enrichment did. If `hint` is present (plugin mode, nothing configured), surface it ONCE, non-blocking. |
+| `warnings` | Non-fatal notes (stale target fetch B-031, degraded enrichment) -- surface to the user. |
+
+Exit codes: `0` = ok; `1` = bad arguments; `2` = git setup failure (worktree unavailable / source fetch / add) -- on non-zero STOP and surface the JSON `error` field.
+
+> The worktree lives at a NON-ignored, in-workspace path so VS Code grep / file / semantic search reach it directly (search cannot see system-temp or ignored files). Review OUTPUT artifacts stay under the self-ignored `pr-review/` tree. The worktree is removed in Step 9.3.
+> Isolation is guaranteed across DIFFERENT PRs (distinct `{prId}` -> distinct worktree path). Reviewing the SAME PR twice in one workspace is out of scope -- the pre-clean assumes at most one live worktree per PR, so a second concurrent run of the same PR would drop the first's worktree.
 
 ## Step 4: Get Changed Files
 
-```pwsh
-git --no-pager diff --name-only origin/{targetBranchName}...HEAD
-git --no-pager diff --stat origin/{targetBranchName}...HEAD
-# MANDATORY: persist the full patch so Step 7 subagents can read it without re-running git diff.
-# The Step 7 dispatch template references this exact path; do NOT skip this command.
-$prId = '{prId}'
-$repo = '{repo}'
-New-Item -ItemType Directory -Force -Path "pr-review/$repo/$prId" | Out-Null
-# Self-ignore: drop a .gitignore so the whole pr-review/ output tree stays out of the
-# consumer's git regardless of their root .gitignore / sync state (portable to the plugin too).
-Set-Content -Path "pr-review/.gitignore" -Value '*'
-git --no-pager diff origin/{targetBranchName}...HEAD > "pr-review/$repo/$prId/diff.txt"
-```
+Step 3's script already computed and persisted the change set -- no extra `git` needed. Read from `worktreeInfo`:
 
-> **Empty diff on an already-merged PR**: the `target...HEAD` form yields an empty patch when the head is already an ancestor of the target (i.e. the PR was merged). Normal reviews never hit this -- Step 1 skips non-`active` PRs -- but when you deliberately review a merged PR (a Step 1 override), fall back to the provider's `fetchDiff` recipe (GitHub: `gh pr diff {prId}`; see `providers/{pr-platform}.md`) so Step 7 analyzes the real change set, not an empty file.
+- Changed-file list: `pr-review/{repo}/{prId}/changed-files.txt` (count = `worktreeInfo.changedFiles`).
+- Full patch for Step 7 subagents: `worktreeInfo.diffFile` (`pr-review/{repo}/{prId}/diff.txt`) -- the Step 7 dispatch template references this exact path.
+- Size: `worktreeInfo.additions` / `worktreeInfo.deletions`.
+- Submodule pointer bumps: `worktreeInfo.submoduleBumps`. If non-empty, note each `{path}: {from}..{to}` in the review. When submodule enrichment is enabled, a bump also carries `commits` (the resolved `from..to` log) -- summarize those instead of the bare pointer, since a lone gitlink bump hides the submodule's real change. Deep diff is opt-in (see `providers/_index.md`).
 
-**Context budget signal**: If changed files > 30 OR diff lines > 800, set `contextPressure = high`. This signals only -- subagents in Step 7 are mandatory regardless of this flag.
+> **Empty diff on an already-merged PR**: the `target...source` range yields an empty patch when the source is already an ancestor of the target (the PR was merged). Normal reviews never hit this -- Step 1 skips non-`active` PRs -- but when you deliberately review a merged PR (a Step 1 override), fall back to the provider's `fetchDiff` recipe (GitHub: `gh pr diff {prId}`; see `providers/{pr-platform}.md`) so Step 7 analyzes the real change set, not an empty file.
+
+**Context budget signal**: If `worktreeInfo.changedFiles` > 30 OR diff lines > 800, set `contextPressure = high`. This signals only -- subagents in Step 7 are mandatory regardless of this flag.
 
 ## Step 5: Create section dir + header + metadata + build fileLinkTemplate
 
-```pwsh
-$prId = '{prId}'
-$repo = '{repo}'
-New-Item -ItemType Directory -Force -Path "pr-review/$repo/$prId/sections" | Out-Null
-# Clean any prior section files so subagent `create_file` doesn't collide
-Remove-Item "pr-review/$repo/$prId/sections/*.md" -ErrorAction SilentlyContinue
+```sh
+node .copilot-toolkit/scripts/pr-review-assemble.mjs init --repo {repo} --pr-id {prId}
 ```
+
+This creates `pr-review/{repo}/{prId}/sections/` and clears any prior `*.md` so a subagent's `create_file` doesn't collide on re-run.
 
 From the provider file's `fileLinkTemplate` definition, substitute every host/registry/`prInfo`-derived placeholder (e.g. `{org}`, `{repo}`, `{prId}`, `{headSha}`) using the values from Step 1 + the matched registry entry. The result is `fileLinkTemplate` -- a string containing ONLY the per-finding placeholders `{path}`, `{startLine}`, `{endLine}`. Remember this string for Step 7 dispatch and Step 8 Action Items.
 
