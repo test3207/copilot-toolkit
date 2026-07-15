@@ -26,32 +26,41 @@ Instead of checking the PR branch out in the shared working tree (which fights c
 
 The isolation guarantee is across DIFFERENT PRs (distinct `{prId}` -> distinct worktree path). Reviewing the SAME PR more than once in one workspace is out of scope -- the pre-clean below assumes at most one live worktree per PR, so a second concurrent run of the same PR would drop the first's worktree.
 
-If the provider file defines a `## setupWorktree` override (see `providers/_index.md`), run that recipe instead of the default below.
+Step 3 has two parts: a **shared scaffolding** block that ALWAYS runs, and a **fetch + worktree-add** block that a provider `## setupWorktree` override MAY replace (see `providers/_index.md`). An override substitutes ONLY the second block -- the scaffolding (output dir, self-ignore, pre-clean/prune) and the exit-code discipline stay with the default, so Step 4's `diff.txt` redirection always has its directory and no failed git step continues silently.
 
 ```pwsh
 $prId = '{prId}'
 $repo = '{repo}'
 $worktree = "pr-review/$repo/$prId/worktree"
 
+# --- Shared scaffolding (ALWAYS run, never overridden by setupWorktree) ---
 # HARD REQUIREMENT: git worktree must be available (git >= 2.5). No fallback -- abort if not.
-# On Windows, the deep worktree path can exceed MAX_PATH -- enable core.longpaths if `git worktree add` fails with a path-length error.
 git worktree list *> $null
 if ($LASTEXITCODE -ne 0) { throw 'git worktree unavailable -- pr-review requires git >= 2.5' }
 
-git --no-pager fetch origin {sourceBranch}
-git --no-pager fetch origin {targetBranch}
-
 # Self-ignore the whole output tree (incl. the worktree) so the host repo never sees it as untracked.
+# Step 4 redirects diff.txt here, so this dir MUST exist regardless of any setupWorktree override.
 New-Item -ItemType Directory -Force -Path "pr-review/$repo/$prId" | Out-Null
 Set-Content -Path 'pr-review/.gitignore' -Value '*'
 
-# Detached HEAD at the fetched source ref -- a branch can be checked out in only one worktree,
-# so detaching keeps concurrent reviews (and the user's own checkout of the same branch) collision-free.
-# Prune UNCONDITIONALLY first: an interrupted prior run (or an out-of-band deletion of the dir) can leave a
-# registered-but-missing worktree, which makes `git worktree add` fail with exit 128 until pruned.
-if (Test-Path $worktree) { git worktree remove --force "$worktree" 2>$null }
+# Pre-clean UNCONDITIONALLY: an interrupted prior run can leave a registered-but-missing worktree
+# (=> `git worktree add` exit 128) or, inversely, an on-disk dir whose registration was lost
+# (=> `'<path>' already exists`). Clear the registration AND any leftover dir, then prune.
+if (Test-Path $worktree) { git worktree remove --force "$worktree" 2>$null; Remove-Item -Recurse -Force $worktree -ErrorAction SilentlyContinue }
 git worktree prune
+
+# --- Fetch + worktree-add (default; a provider `## setupWorktree` replaces ONLY this block) ---
+# On Windows the deep worktree path can exceed MAX_PATH -- enable core.longpaths if `add` fails on path length.
+# PowerShell does NOT stop on a non-zero native exit, so check $LASTEXITCODE explicitly after each git step.
+git --no-pager fetch origin {sourceBranch}
+if ($LASTEXITCODE -ne 0) { throw "fetch of source branch '{sourceBranch}' failed -- cannot build the review worktree" }
+git --no-pager fetch origin {targetBranch}
+if ($LASTEXITCODE -ne 0) { Write-Warning "fetch of target branch '{targetBranch}' failed -- diff base may be stale (B-031)" }
+
+# Detached HEAD at the fetched source ref -- a branch can be checked out in only one worktree,
+# so detaching keeps the user's own checkout of the same branch collision-free.
 git worktree add --detach "$worktree" "origin/{sourceBranch}"
+if ($LASTEXITCODE -ne 0) { throw "git worktree add failed (exit $LASTEXITCODE) -- on Windows a MAX_PATH error needs core.longpaths=true" }
 ```
 
 > Fetching both branches avoids the stale-diff issue (B-031): if local `origin/{targetBranch}` is behind, the `target...HEAD` diff includes surplus context that no longer exists on the effective merge target.
