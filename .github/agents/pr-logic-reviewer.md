@@ -22,7 +22,7 @@ You will receive:
 - **Intent**: what the PR is trying to do (problem, solution, expected behavior, change type)
 - **Changed files**: list of modified files
 - **Target branch**: for git diff context
-- **Repo path**: where the working tree is
+- **Repo path**: the isolated git worktree checked out to the PR source branch -- read all source files from here (it reflects the PR head; reading it never disturbs the user's live tree)
 - **Anti-pattern groups to load**: list of file paths under `{toolkit-root}/skills/pr-review/anti-patterns/`
 
 You build your own per-caller table, branch-equivalence table, and reachability matrix internally -- do NOT expect them in the input. The main agent stopped pre-building them.

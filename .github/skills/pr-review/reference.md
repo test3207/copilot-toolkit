@@ -72,7 +72,7 @@ $prId = '{prId}'
 $repo = '{repo}'
 $model = '{exact model name from system instructions, e.g. "Claude Opus 4.7 (Extra high reasoning)(Internal only)"}'
 $toolName = '{Tool name from SKILL.md Quick Reference, default pr-review}'
-$version = '{Tool version from SKILL.md Quick Reference, e.g. v3.4.1}'
+$version = '{Tool version from SKILL.md Quick Reference, e.g. v3.5.0}'
 $header = @"
 ## AI Code Review
 

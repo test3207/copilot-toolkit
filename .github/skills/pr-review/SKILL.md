@@ -31,8 +31,8 @@ When NOT to use it:
 | Item | Value |
 | ---- | ----- |
 | Tool name | `pr-review` |
-| Tool version | `v3.4.1` |
-| Working dir | `pr-review/{repo}/{prId}/sections/*.md` per-section files; `pr-review/{repo}/{prId}/review.md` is the terminal-concat artifact; the persisted diff is `pr-review/{repo}/{prId}/diff.txt`. All output lives under `pr-review/`, which the skill self-ignores via a generated `pr-review/.gitignore` (`*`) on first run -- portable, needs no consumer root `.gitignore` or sync. |
+| Tool version | `v3.5.0` |
+| Working dir | `pr-review/{repo}/{prId}/sections/*.md` per-section files; `pr-review/{repo}/{prId}/review.md` is the terminal-concat artifact; the persisted diff is `pr-review/{repo}/{prId}/diff.txt`. The PR source branch is checked out into an isolated worktree at `pr-review/{repo}/{prId}/worktree/` (Step 3), so reviews never mutate the user's working tree and multiple reviews can run in parallel in the same repo. All output lives under `pr-review/`, which the skill self-ignores via a generated `pr-review/.gitignore` (`*`) on first run -- portable, needs no consumer root `.gitignore` or sync. |
 | Providers | [providers/ado.md](./providers/ado.md), [providers/github.md](./providers/github.md). Add a new file under `providers/` for new hosts; no workflow edits required. |
 | Subagents | `.github/agents/pr-logic-reviewer.md` (7a) · `.github/agents/pr-impact-analyzer.md` (7b) · `.github/agents/pr-quality-checker.md` (7c) · `.github/agents/pr-finding-validator.md` (7d). |
 
@@ -90,7 +90,7 @@ Orchestration entry point is [workflow.md](./workflow.md); it indexes three step
 5. Never skip steps or execute without todo tracking.
 ```
 
-**Key Principle**: Checkout PR branch locally; subagents do deep analysis in their own contexts and write directly to section files. Main agent never reads source files inline; main agent never reads back full subagent payloads.
+**Key Principle**: Check out the PR source branch into an isolated git worktree (parallel-safe; never touches the user's working tree); subagents do deep analysis in their own contexts and write directly to section files. Main agent never reads source files inline; main agent never reads back full subagent payloads.
 
 ## PR Comment Rules
 
@@ -110,7 +110,7 @@ When posting review comments to PR:
 
    - `<model_name>`: state your exact model name as defined in your system instructions. Do not guess.
    - `<tool_name>`: the **Tool name** value from the Quick Reference table above (currently `pr-review`). Use exactly that string.
-   - `<tool_version>`: the **Tool version** value from the Quick Reference table above (currently `v3.4.1`). Use exactly that string -- do not substitute a different version.
+   - `<tool_version>`: the **Tool version** value from the Quick Reference table above (currently `v3.5.0`). Use exactly that string -- do not substitute a different version.
 4. **Post the full assembled body** — the section template concats TL;DR + Action Items + Intent + Validation (+ ICM if applicable). Do NOT condense or rewrite from memory.
 5. **ICM Comment is NOT posted to PR** — it is saved in `sections/90-icm.md` for manual copy-paste.
 

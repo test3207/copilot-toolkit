@@ -20,30 +20,50 @@ Run the **getPrInfo** recipe from `providers/{pr-platform}.md`. Extract the stan
 
 Run the **getThreads** recipe from `providers/{pr-platform}.md`. Filter out bot/system messages per the provider's filtering guidance. Note existing feedback and open issues to avoid duplicate comments.
 
-## Step 3: Checkout PR Branch
+## Step 3: Create Isolated Worktree (parallel-safe)
+
+Instead of checking the PR branch out in the shared working tree (which fights concurrent reviews and disturbs the user's own checkout), create a dedicated git worktree per review. Two reviews of different PRs in the same repo run in parallel because each gets its own detached HEAD; the user's working tree is never touched.
 
 ```pwsh
+$prId = '{prId}'
+$repo = '{repo}'
+$worktree = "pr-review/$repo/$prId/worktree"
+
+# HARD REQUIREMENT: git worktree must be available (git >= 2.5). No fallback -- abort if not.
+git worktree list *> $null
+if ($LASTEXITCODE -ne 0) { Write-Error 'git worktree unavailable -- pr-review requires git >= 2.5'; exit 1 }
+
 git --no-pager fetch origin {sourceBranchName}
 git --no-pager fetch origin {targetBranchName}
-git checkout {sourceBranchName}
+
+# Self-ignore the whole output tree (incl. the worktree) so the host repo never sees it as untracked.
+New-Item -ItemType Directory -Force -Path "pr-review/$repo/$prId" | Out-Null
+Set-Content -Path 'pr-review/.gitignore' -Value '*'
+
+# Detached HEAD at the fetched source ref -- a branch can be checked out in only one worktree,
+# so detaching keeps concurrent reviews (and the user's own checkout of the same branch) collision-free.
+if (Test-Path $worktree) { git worktree remove --force "$worktree" 2>$null; git worktree prune }
+git worktree add --detach "$worktree" "origin/{sourceBranchName}"
 ```
 
 > Fetching both branches avoids the stale-diff issue (B-031): if local `origin/{targetBranchName}` is behind, the `target...HEAD` diff includes surplus context that no longer exists on the effective merge target.
+> The worktree lives under the self-ignored `pr-review/` tree and is removed in Step 9.3.
 
 ## Step 4: Get Changed Files
 
+All diffs run against the isolated worktree (`git -C "$worktree"`), whose detached HEAD is the PR source ref -- so `origin/{targetBranchName}...HEAD` is identical to before, without touching the user's tree.
+
 ```pwsh
-git --no-pager diff --name-only origin/{targetBranchName}...HEAD
-git --no-pager diff --stat origin/{targetBranchName}...HEAD
-# MANDATORY: persist the full patch so Step 7 subagents can read it without re-running git diff.
-# The Step 7 dispatch template references this exact path; do NOT skip this command.
 $prId = '{prId}'
 $repo = '{repo}'
-New-Item -ItemType Directory -Force -Path "pr-review/$repo/$prId" | Out-Null
-# Self-ignore: drop a .gitignore so the whole pr-review/ output tree stays out of the
-# consumer's git regardless of their root .gitignore / sync state (portable to the plugin too).
-Set-Content -Path "pr-review/.gitignore" -Value '*'
-git --no-pager diff origin/{targetBranchName}...HEAD > "pr-review/$repo/$prId/diff.txt"
+$worktree = "pr-review/$repo/$prId/worktree"
+git -C "$worktree" --no-pager diff --name-only origin/{targetBranchName}...HEAD
+git -C "$worktree" --no-pager diff --stat origin/{targetBranchName}...HEAD
+# MANDATORY: persist the full patch so Step 7 subagents can read it without re-running git diff.
+# The Step 7 dispatch template references this exact path; do NOT skip this command.
+# Redirection is relative to the shell cwd (host repo), so diff.txt lands beside the worktree, not inside it.
+# (The pr-review/$repo/$prId dir + pr-review/.gitignore were already created in Step 3.)
+git -C "$worktree" --no-pager diff origin/{targetBranchName}...HEAD > "pr-review/$repo/$prId/diff.txt"
 ```
 
 > **Empty diff on an already-merged PR**: the `target...HEAD` form yields an empty patch when the head is already an ancestor of the target (i.e. the PR was merged). Normal reviews never hit this -- Step 1 skips non-`active` PRs -- but when you deliberately review a merged PR (a Step 1 override), fall back to the provider's `fetchDiff` recipe (GitHub: `gh pr diff {prId}`; see `providers/{pr-platform}.md`) so Step 7 analyzes the real change set, not an empty file.

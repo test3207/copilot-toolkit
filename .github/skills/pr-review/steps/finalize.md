@@ -78,10 +78,15 @@ Run the **postComment** recipe for the access method resolved in Step 0 (from `p
 
 - `mcp` / `cli` / `rest`: post via that method's recipe. For `mcp`, fall through to the REST recipe only if the call fails for an auth / tenant / availability reason, or when the provider's Note flags a ctx tradeoff worth taking.
 
-### 9.3 Return to develop
+### 9.3 Remove the isolated worktree
+
+The review never touched the user's working tree, so there's nothing to restore -- just delete the per-review worktree (the output `*.md` files live one level up and stay).
 
 ```pwsh
-git checkout {targetBranch}
+$prId = '{prId}'
+$repo = '{repo}'
+git worktree remove --force "pr-review/$repo/$prId/worktree"
+git worktree prune
 ```
 
 > ICM Comment is NOT posted automatically. It is saved in `90-icm.md` for the user to copy-paste into ICM when the PR fixes an incident.

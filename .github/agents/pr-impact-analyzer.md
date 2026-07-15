@@ -21,7 +21,7 @@ You will receive:
 - **Modified functions/methods**: list of changed functions with file paths
 - **Change type**: Config/UI/Signature/Logic/API (determines analysis depth)
 - **Intent summary**: what the PR is trying to do
-- **Repo path**: where the working tree is
+- **Repo path**: the isolated git worktree checked out to the PR source branch -- read all source files from here (it reflects the PR head; reading it never disturbs the user's live tree)
 - **Anti-pattern groups to load**: list of file paths
 
 You build your own per-caller table, co-writer table, and reachability matrix internally. The main agent stopped pre-building them.

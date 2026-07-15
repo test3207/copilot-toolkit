@@ -29,7 +29,7 @@ You will receive:
 - **Action items**: consolidated list of Medium+ findings (from the 3 prior subagent summaries: severity, file link, one-line description) -- file links already follow the URL rule; preserve them as-is when echoing.
 - **Section files of the 3 prior subagents**: `pr-review/{repo}/{prId}/sections/20-logic.md`, `30-impact.md`, `40-quality.md` -- read these for the call-chain tables and per-caller analyses already built (don't re-trace).
 - **Intent summary**: what the PR does
-- **Repo path**: working tree
+- **Repo path**: the isolated git worktree checked out to the PR source branch (reflects the PR head; reading it never disturbs the user's live tree)
 
 ## File Reference URL Rule
 
