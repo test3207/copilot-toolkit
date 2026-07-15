@@ -58,6 +58,10 @@ if (!command || !['setup', 'cleanup'].includes(command)) {
 if (!repo || !prId) {
   fail(1, '--repo and --pr-id are required');
 }
+// These build filesystem paths that reach rmSync(recursive) -- reject separators / traversal (defense-in-depth).
+if (/[/\\]|\.\./.test(repo) || /[/\\]|\.\./.test(prId)) {
+  fail(1, '--repo and --pr-id must not contain path separators or ".."');
+}
 
 // Absolute worktree path, resolved from the node process cwd (= workspace root). MUST be
 // absolute: `git -C {repoPath}` resolves relative paths against {repoPath}, not the workspace root.
@@ -214,6 +218,13 @@ writeFileSync(resolve(outDir, 'changed-files.txt'), changedList.join('\n') + (ch
 
 const patch = gitTry(['--no-pager', 'diff', range]);
 writeFileSync(diffFile, patch.ok ? patch.out : '');
+
+// A failed diff (unresolved origin/{target} after a warned target fetch, or a patch over maxBuffer)
+// must NOT masquerade as a clean empty review -- warn so the caller can fall back to fetchDiff.
+if (!nameOnly.ok || !patch.ok) {
+  const derr = ((patch.err || nameOnly.err || '').trim().split('\n')[0] || '').slice(0, 200);
+  warnings.push(`diff for '${range}' failed -- diff.txt / changed-files may be EMPTY and Step 7 would analyze nothing (origin/${target} may be unresolved, or the patch exceeds maxBuffer): ${derr}`);
+}
 
 const shortstat = gitTry(['--no-pager', 'diff', '--shortstat', range]).out || '';
 const additions = parseInt((shortstat.match(/(\d+) insertion/) || [])[1] || '0', 10);

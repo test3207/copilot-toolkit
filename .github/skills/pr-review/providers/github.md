@@ -65,7 +65,7 @@ GitHub PRs have two distinct comment surfaces — the script fetches BOTH into o
 
 ## fetchDiff
 
-Optional override of Step 4's default (`git --no-pager diff origin/{target}...HEAD`). Use it **only** as a fallback when that three-dot diff is empty because the PR is already merged (its head is an ancestor of the target) -- e.g. a Step 1 override that reviews a merged PR. `gh pr diff` returns the canonical PR patch regardless of merge state:
+Optional override of Step 4's default (`git --no-pager diff origin/{target}...origin/{source}`). Use it **only** as a fallback when that three-dot diff is empty because the PR is already merged (its head is an ancestor of the target) -- e.g. a Step 1 override that reviews a merged PR. `gh pr diff` returns the canonical PR patch regardless of merge state:
 
 `node .copilot-toolkit/scripts/github-rest.mjs get-diff --owner {github-owner} --repo {github-repo} --pr-id {prId} --out pr-review/{repo}/{prId}/diff.txt` (add `--host {github-host}` for GHES) — the canonical PR patch regardless of merge state.
 

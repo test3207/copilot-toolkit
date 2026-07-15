@@ -12,7 +12,7 @@ Anything host-specific (URL formats, auto-link patterns, fetch/post recipes) liv
 
 ## Section File Templates
 
-The workflow writes content into per-section files under `pr-review/{repo}/{prId}/sections/`. The final `review.md` is assembled by `Get-ChildItem ... | Sort-Object Name | Get-Content -Raw | Set-Content` (Step 9.1) -- numeric prefix gives natural ordering.
+The workflow writes content into per-section files under `pr-review/{repo}/{prId}/sections/`. The final `review.md` is assembled by `pr-review-assemble.mjs review` (Step 9.1), which concatenates `sections/*.md` in filename order -- the numeric prefix gives natural ordering.
 
 ### TL;DR section file template
 
@@ -63,7 +63,7 @@ Write to `pr-review/{repo}/{prId}/sections/90-icm.md` ONLY if the PR fixes an IC
 
 ### PR Comment artifact template
 
-Write to `pr-review/{repo}/{prId}/pr-comment.md` (NOT inside `sections/` -- lives one level up so the `review.md` concat in workflow Step 9.1 does not pull it in twice). Use terminal `Get-Content` to pull in section bodies -- do NOT rewrite the section content from memory.
+Write to `pr-review/{repo}/{prId}/pr-comment.md` (NOT inside `sections/` -- lives one level up so the `review.md` concat in workflow Step 9.1 does not pull it in twice). The `pr-review-assemble.mjs comment` sub-command pulls in the section bodies -- do NOT rewrite the section content from memory.
 
 **Curated content only (since v3.4.1)**: AI header + TL;DR (with validator-curated Action Items) + Intent + Validation (chain per blocking item) + ICM-if-applicable + footer. The raw subagent sections `20-logic.md` / `30-impact.md` / `40-quality.md` are **intentionally excluded** from the posted comment -- every actionable finding is already in TL;DR Action Items and Validation, so including the raw analyses duplicated each Bug/High/Medium finding 2-3x and pushed real comments to 80+ KB. The full per-call-site / call-chain / smell tables stay in `review.md` for local exploration; if the dev wants to debug a specific Action Item, they `cat pr-review/{repo}/{prId}/review.md` locally.
 
