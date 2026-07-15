@@ -50,7 +50,7 @@ Workflow is split into three step files to keep this orchestrator under budget. 
 | ---- | ----- | --------- |
 | [steps/prep.md](steps/prep.md) | 0–5: resolve provider, PR info, threads, isolated worktree, diff, section dir + header | After todo list is built; before Step 0. |
 | [steps/analyze.md](steps/analyze.md) | 6–7: intent + MANDATORY parallel subagent dispatch (7a/b/c) + conditional 7d validator | After Step 5 completes. |
-| [steps/finalize.md](steps/finalize.md) | 8–9: verdict + Action Items + assemble + post + return-to-target | After Step 7 (or 7d) completes. |
+| [steps/finalize.md](steps/finalize.md) | 8–9: verdict + Action Items + assemble + post + remove worktree | After Step 7 (or 7d) completes. |
 
 Cross-file references: subagent prompts (in `.github/agents/pr-*.md`) call out "Step 9.1b hard gate" by name only -- they do not read the workflow files. The file-link safe-replacement table they need is in `providers/{pr-platform}.md`, not here.
 

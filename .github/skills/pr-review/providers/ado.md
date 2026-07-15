@@ -63,7 +63,7 @@ Fallback / `rest` transport (ctx-isolated — the payload never enters main-agen
 | `created` | `creationDate` |
 | `reviewers` | `reviewers[*]` → `{ name: displayName, vote: vote }`. Vote values: `10`=approved, `5`=approved-with-suggestions, `0`=no-vote, `-5`=waiting, `-10`=rejected. |
 | `headSha` | `lastMergeSourceCommit.commitId` (the head of the source branch as ADO sees it). **Not used by ADO `fileLinkTemplate`** but kept for parity with the standard object. |
-| `additions` / `deletions` / `changedFiles` | NOT returned in the PR payload — compute from `git --no-pager diff --shortstat origin/{targetBranch}...HEAD` after Step 3 checkout. |
+| `additions` / `deletions` / `changedFiles` | NOT returned in the PR payload — compute from `git -C pr-review/{repo}/{prId}/worktree --no-pager diff --shortstat origin/{targetBranch}...HEAD` against the Step 3 worktree (the host tree's HEAD is unchanged under the worktree model, so run it via `git -C` on the worktree). |
 | `workItemRefs` | `workItemRefs[*].id` (only when `includeWorkItemRefs=true`) |
 | `repoNameForLinks` | `repository.name` — the short name, NOT the GUID. The ADO web UI URL requires the name. |
 
