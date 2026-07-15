@@ -24,6 +24,8 @@ Run the **getThreads** recipe from `providers/{pr-platform}.md`. Filter out bot/
 
 Instead of checking the PR branch out in the shared working tree (which fights concurrent reviews and disturbs the user's own checkout), create a dedicated git worktree per review. Two reviews of different PRs in the same repo run in parallel because each gets its own detached HEAD; the user's working tree is never touched.
 
+The isolation guarantee is across DIFFERENT PRs (distinct `{prId}` -> distinct worktree path); reviewing the SAME PR concurrently in the same workspace is not supported (the unconditional pre-clean below would race). Concurrent review *starts* also share one `.git`, so a `git worktree add` may occasionally need a retry on an `index.lock`.
+
 If the provider file defines a `## setupWorktree` override (see `providers/_index.md`), run that recipe instead of the default below.
 
 ```pwsh
@@ -34,7 +36,7 @@ $worktree = "pr-review/$repo/$prId/worktree"
 # HARD REQUIREMENT: git worktree must be available (git >= 2.5). No fallback -- abort if not.
 # On Windows, the deep worktree path can exceed MAX_PATH -- enable core.longpaths if `git worktree add` fails with a path-length error.
 git worktree list *> $null
-if ($LASTEXITCODE -ne 0) { Write-Error 'git worktree unavailable -- pr-review requires git >= 2.5'; exit 1 }
+if ($LASTEXITCODE -ne 0) { throw 'git worktree unavailable -- pr-review requires git >= 2.5' }
 
 git --no-pager fetch origin {sourceBranch}
 git --no-pager fetch origin {targetBranch}

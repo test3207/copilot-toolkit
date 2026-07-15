@@ -85,7 +85,9 @@ The review never touched the user's working tree, so there's nothing to restore 
 ```pwsh
 $prId = '{prId}'
 $repo = '{repo}'
-git worktree remove --force "pr-review/$repo/$prId/worktree"
+$worktree = "pr-review/$repo/$prId/worktree"
+# Idempotent: a partially failed run may have already removed it -- don't error if it's gone.
+if (Test-Path $worktree) { git worktree remove --force "$worktree" }
 git worktree prune
 ```
 

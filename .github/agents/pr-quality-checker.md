@@ -22,7 +22,7 @@ You will receive:
 - **forbiddenAutoLinkPatterns** -- list of `{ pattern, autoLinksTo, safeReplacement }` rows from the provider. Never emit text that matches `pattern`; use the safe replacement shown for that pattern. Examples vary by host (ADO `#\d+` -> work item; GitHub `#\d+` -> issue/PR, `@user` -> mention, bare SHA -> commit).
 - **Changed files**: list of modified files with diff content
 - **Change summary**: brief description of what was changed
-- **Repo path**: the isolated git worktree checked out to the PR source branch -- search/read all source from here (it reflects the PR head; reading it never disturbs the user's live tree)
+- **Repo path**: the isolated git worktree checked out to the PR source branch -- search/read all source from here (it reflects the PR head; reading it never disturbs the user's live tree). It is under the self-ignored `pr-review/` tree, so use `grep_search` + `includeIgnoredFiles: true` (scoped to this path) and open files with `read_file`; `file_search`/`semantic_search` will NOT see it.
 - **Coding-standards files to load**: list from the registry entry, or language-autodetected in derive mode (e.g. `common.md`, `typescript.md`)
 
 ## File Reference URL Rule

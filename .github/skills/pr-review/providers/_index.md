@@ -27,7 +27,7 @@ Every `providers/{name}.md` MUST contain these sections, in this order, with the
 Optional sections (use when applicable):
 
 - `## fetchDiff` — override if the platform needs something other than `git diff origin/{target}...HEAD`.
-- `## setupWorktree` — override if the platform needs something other than the Step 3 default `git fetch origin {ref}; git worktree add --detach <path> origin/{ref}` (isolated per-review worktree).
+- `## setupWorktree` — override if the platform needs something other than the Step 3 default `git fetch origin {ref}; git worktree add --detach <path> origin/{ref}` (isolated per-review worktree). The override MUST place the worktree at the standard path `pr-review/{repo}/{prId}/worktree` — Step 4 diffs and Step 7 subagents hard-code that location. Only the fetch / ref-resolution may differ (e.g. GitHub fork PRs fetch `refs/pull/{prId}/head`).
 
 ### Standard `prInfo` object
 

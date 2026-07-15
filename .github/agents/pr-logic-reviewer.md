@@ -22,7 +22,7 @@ You will receive:
 - **Intent**: what the PR is trying to do (problem, solution, expected behavior, change type)
 - **Changed files**: list of modified files
 - **Target branch**: for git diff context
-- **Repo path**: the isolated git worktree checked out to the PR source branch -- read all source files from here (it reflects the PR head; reading it never disturbs the user's live tree)
+- **Repo path**: the isolated git worktree checked out to the PR source branch -- read all source files from here (it reflects the PR head; reading it never disturbs the user's live tree). It is under the self-ignored `pr-review/` tree, so search it with `grep_search` + `includeIgnoredFiles: true` (scoped to this path) and open files with `read_file`; `file_search`/`semantic_search` will NOT see it.
 - **Anti-pattern groups to load**: list of file paths under `{toolkit-root}/skills/pr-review/anti-patterns/`
 
 You build your own per-caller table, branch-equivalence table, and reachability matrix internally -- do NOT expect them in the input. The main agent stopped pre-building them.
