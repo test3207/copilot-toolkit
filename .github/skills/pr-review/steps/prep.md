@@ -24,7 +24,7 @@ Run the **getThreads** recipe from `providers/{pr-platform}.md`. Filter out bot/
 
 Instead of checking the PR branch out in the shared working tree (which fights concurrent reviews and disturbs the user's own checkout), create a dedicated git worktree per review. Two reviews of different PRs in the same repo run in parallel because each gets its own detached HEAD; the user's working tree is never touched.
 
-The isolation guarantee is across DIFFERENT PRs (distinct `{prId}` -> distinct worktree path); reviewing the SAME PR concurrently in the same workspace is not supported (the unconditional pre-clean below would race). Concurrent review *starts* also share one `.git`, so a `git worktree add` may occasionally need a retry on an `index.lock`.
+The isolation guarantee is across DIFFERENT PRs (distinct `{prId}` -> distinct worktree path). Reviewing the SAME PR more than once in one workspace is out of scope -- the pre-clean below assumes at most one live worktree per PR, so a second concurrent run of the same PR would drop the first's worktree.
 
 If the provider file defines a `## setupWorktree` override (see `providers/_index.md`), run that recipe instead of the default below.
 
