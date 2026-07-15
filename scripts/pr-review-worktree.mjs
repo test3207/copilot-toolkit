@@ -15,16 +15,26 @@
 // git is invoked with execFileSync + an args ARRAY (no shell), so there is no cross-platform
 // quoting/escaping hazard.
 //
+// Optional, OPT-IN enrichment (TRUSTED repos only -- default OFF): a `worktree` config block
+// { submodules: false|true|"recursive", setup: ["npm ci", ...] } can init submodules and run
+// build/setup commands inside the worktree so subagents get type info + deep submodule diffs.
+// Precedence L3 > L2 > default OFF: the reviewed repo's OWN .github/pr-review.json (read from the
+// BASE checkout, so a PR cannot inject commands) wins; else the caller-resolved --config file
+// (L2 registry); else off. Enrichment runs `git submodule update` (CVE-2018-11235 recursive-clone
+// RCE surface) and arbitrary `setup` shell commands (postinstall RCE surface) -- ONLY enable for
+// repos you trust. Any enrichment failure DEGRADES (adds a warning) and never blocks the review.
+//
 // Usage:
-//   setup:   node pr-review-worktree.mjs setup   --repo-path <p> --repo <name> --pr-id <id> --source <branch> --target <branch>
+//   setup:   node pr-review-worktree.mjs setup   --repo-path <p> --repo <name> --pr-id <id> --source <branch> --target <branch> [--config <json-file>]
 //   cleanup: node pr-review-worktree.mjs cleanup --repo-path <p> --repo <name> --pr-id <id>
 //
 // stdout (setup) = one JSON object:
-//   { worktree, outDir, diffFile, changedFiles, additions, deletions, submoduleBumps: [{ path, from, to }], warnings: [] }
+//   { worktree, outDir, diffFile, changedFiles, additions, deletions,
+//     submoduleBumps: [{ path, from, to, commits? }], enrichment: {...}, warnings: [] }
 // Exit: 0 = ok; 1 = usage/precondition error; 2 = git setup failure (worktree unavailable / fetch / add).
 
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { execFileSync, execSync } from 'node:child_process';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 function arg(flag, def) {
@@ -65,6 +75,49 @@ function git(args) {
 function gitTry(args) {
   try { return { ok: true, out: git(args).toString() }; }
   catch (e) { return { ok: false, out: (e.stdout || '').toString(), err: (e.stderr || e.message || '').toString() }; }
+}
+
+// git against an ARBITRARY dir (the worktree or a nested submodule), not {repoPath}.
+function gitAt(dir, args) {
+  try {
+    return { ok: true, out: execFileSync('git', ['-C', dir, ...args], {
+      stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 1024 * 1024,
+    }).toString() };
+  } catch (e) { return { ok: false, out: (e.stdout || '').toString(), err: (e.stderr || e.message || '').toString() }; }
+}
+
+function readJson(p) {
+  try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
+}
+
+function normSubmodules(v) {
+  if (v === true || v === 'true') return 'true';
+  if (v === 'recursive') return 'recursive';
+  return 'false';
+}
+
+// Resolve the effective `worktree` config. Layer default -> L2 (--config file) -> L3 (repo's own
+// .github/pr-review.json, read from the BASE checkout), so L3 wins. Returns { submodules, setup, source }.
+function resolveWorktreeConfig() {
+  const cfg = { submodules: 'false', setup: [], source: 'none' };
+  const l2path = arg('--config', '');
+  if (l2path) {
+    const j = readJson(resolve(process.cwd(), l2path));
+    const w = j && j.worktree ? j.worktree : j;
+    if (w && typeof w === 'object') {
+      if ('submodules' in w) cfg.submodules = normSubmodules(w.submodules);
+      if (Array.isArray(w.setup)) cfg.setup = w.setup.filter((c) => typeof c === 'string');
+      cfg.source = 'l2';
+    }
+  }
+  const l3 = readJson(resolve(repoPath, '.github', 'pr-review.json'));
+  if (l3 && l3.worktree && typeof l3.worktree === 'object') {
+    const w = l3.worktree;
+    if ('submodules' in w) cfg.submodules = normSubmodules(w.submodules);
+    if (Array.isArray(w.setup)) cfg.setup = w.setup.filter((c) => typeof c === 'string');
+    cfg.source = 'l3';
+  }
+  return cfg;
 }
 
 function preClean() {
@@ -122,6 +175,37 @@ if (!add.ok) {
   fail(2, `git worktree add failed -- on Windows a MAX_PATH error needs core.longpaths=true: ${add.err.trim()}`);
 }
 
+// ---- Enrichment (opt-in, TRUSTED repos only; failures degrade, never block) ----
+const cfg = resolveWorktreeConfig();
+const enrichment = { submodules: cfg.submodules, configSource: cfg.source, submoduleUpdate: 'skipped', setup: [] };
+
+if (cfg.submodules !== 'false') {
+  const smArgs = ['submodule', 'update', '--init'];
+  if (cfg.submodules === 'recursive') smArgs.push('--recursive');
+  const sm = gitAt(worktree, smArgs);
+  if (sm.ok) {
+    enrichment.submoduleUpdate = 'ok';
+  } else {
+    enrichment.submoduleUpdate = 'failed';
+    warnings.push(`submodule update failed (non-blocking): ${(sm.err.trim().split('\n')[0] || '').slice(0, 200)}`);
+  }
+}
+
+for (const cmd of cfg.setup) {
+  // Trusted, opt-in config -> shell is intentional here (commands like `npm ci`); cwd = worktree.
+  try {
+    execSync(cmd, { cwd: worktree, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', windowsHide: true, timeout: 300000, maxBuffer: 64 * 1024 * 1024 });
+    enrichment.setup.push({ cmd, ok: true });
+  } catch {
+    enrichment.setup.push({ cmd, ok: false });
+    warnings.push(`setup command failed (non-blocking): ${cmd}`);
+  }
+}
+
+if (enrichment.configSource === 'none' && repoPath === '.') {
+  enrichment.hint = 'No worktree enrichment configured -- add a "worktree" block ({ submodules, setup }) to .github/pr-review.json for submodule-aware + type-aware checks (trusted repos only).';
+}
+
 // Diff is computed from refs (target...source), independent of the worktree HEAD.
 const range = `origin/${target}...origin/${source}`;
 const nameOnly = gitTry(['--no-pager', 'diff', '--name-only', range]);
@@ -145,6 +229,19 @@ for (const line of raw.split('\n')) {
   }
 }
 
+// Deep submodule diff (opt-in): only once submodules were fetched via enrichment can we resolve
+// the bumped from..to range into the actual commit list. Best-effort -- absent shas are skipped.
+if (cfg.submodules !== 'false' && enrichment.submoduleUpdate === 'ok') {
+  for (const b of submoduleBumps) {
+    const subDir = resolve(worktree, b.path);
+    if (!existsSync(subDir)) continue;
+    const log = gitAt(subDir, ['--no-pager', 'log', '--oneline', '--no-decorate', `${b.from}..${b.to}`]);
+    if (log.ok && log.out.trim()) {
+      b.commits = log.out.trim().split('\n').slice(0, 50);
+    }
+  }
+}
+
 console.log(JSON.stringify({
   worktree,
   outDir,
@@ -153,5 +250,6 @@ console.log(JSON.stringify({
   additions,
   deletions,
   submoduleBumps,
+  enrichment,
   warnings,
 }));

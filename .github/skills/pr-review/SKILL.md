@@ -61,11 +61,17 @@ A consumer-owned file at the **reviewed repo's** root, used only in derive mode 
   "target-branch": "main",          // override; normally taken from the PR object
   "coding-standards": ["common.md", "typescript.md"],  // override language autodetect
   "anti-pattern-allowlist": ["semantic.md", "control-flow.md"],  // restrict groups
-  "pr-template": ".github/pull_request_template.md"   // enable template checks
+  "pr-template": ".github/pull_request_template.md",   // enable template checks
+  "worktree": {                     // OPT-IN worktree enrichment (TRUSTED repos only; default OFF)
+    "submodules": false,            // false | true | "recursive" — `git submodule update --init [--recursive]` in the worktree
+    "setup": ["npm ci"]             // shell commands run in the worktree so subagents get type info (get_errors, listCodeUsages)
+  }
 }
 ```
 
 Any present field augments/overrides the corresponding derived value. The schema mirrors the registry entry keys so registry mode and derive mode stay interchangeable.
+
+**The `worktree` block is the one exception to "registry mode ignores this file".** It is L3-owned (the repo knows its own build), so its precedence is **reviewed-repo `.github/pr-review.json` > registry entry `worktree` > default OFF** — even in registry mode. Step 3's `scripts/pr-review-worktree.mjs` reads it from the **base checkout** (never the PR source branch), so a malicious PR cannot inject `setup` commands. Enable it **only for repos you trust**: `submodules` exercises the recursive-clone RCE surface (CVE-2018-11235) and `setup` runs arbitrary shell (postinstall RCE). Any enrichment failure degrades to a non-blocking warning; when nothing is configured in plugin mode the script emits a one-line hint the main agent surfaces once.
 
 ## Workflow
 

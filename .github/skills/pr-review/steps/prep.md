@@ -24,14 +24,17 @@ Run the **getThreads** recipe from `providers/{pr-platform}.md`. Filter out bot/
 
 Instead of checking the PR branch out in the shared working tree (which fights concurrent reviews and disturbs the user's own checkout), create a dedicated git worktree per review. Two reviews of different PRs run in parallel because each gets its own detached HEAD; the user's working tree is never touched.
 
-`scripts/pr-review-worktree.mjs` does all the deterministic git glue in one Node run (the "recipe glue = Node script" rule -- no inline multi-step shell): probe worktree availability, scaffold the self-ignored output tree, pre-clean/prune any interrupted prior run, fetch source + target, add the detached worktree, then compute the diff + submodule-bump summary. Every git call runs against `{repoContext.path}` via `git -C`, so it works whether the reviewed repo is the workspace root (`path: "."`, plugin mode) or a git submodule (`path: "repos/<name>"`, L2 mode).
+`scripts/pr-review-worktree.mjs` does all the deterministic git glue in one Node run (the "recipe glue = Node script" rule -- no inline multi-step shell): probe worktree availability, scaffold the self-ignored output tree, pre-clean/prune any interrupted prior run, fetch source + target, add the detached worktree, run optional enrichment, then compute the diff + submodule-bump summary. Every git call runs against `{repoContext.path}` via `git -C`, so it works whether the reviewed repo is the workspace root (`path: "."`, plugin mode) or a git submodule (`path: "repos/<name>"`, L2 mode).
+
+**Enrichment config (optional)**: the script reads the reviewed repo's own `.github/pr-review.json` `worktree` block (L3, from the base checkout) automatically. If instead the registry entry carries a `worktree` block (L2), write it to a JSON file with `create_file` (e.g. `pr-review/{repo}/{prId}/worktree-config.json`) and pass `--config <that path>` -- L3 still overrides L2 if both exist. If the registry has no `worktree` block, omit `--config`. See `providers/_index.md` → *Worktree enrichment config precedence*.
 
 Run:
 
 ```sh
 node .copilot-toolkit/scripts/pr-review-worktree.mjs setup \
   --repo-path {repoContext.path} --repo {repo} --pr-id {prId} \
-  --source {sourceBranch} --target {targetBranch}
+  --source {sourceBranch} --target {targetBranch} \
+  [--config pr-review/{repo}/{prId}/worktree-config.json]
 ```
 
 The script prints ONE JSON object to stdout -- capture it as `worktreeInfo`:
@@ -42,8 +45,9 @@ The script prints ONE JSON object to stdout -- capture it as `worktreeInfo`:
 | `outDir` | `pr-review/{repo}/{prId}` (self-ignored) -- holds `diff.txt`, `changed-files.txt`, sections. |
 | `diffFile` | Full-patch path for Step 7 subagents. |
 | `changedFiles` / `additions` / `deletions` | Change-size signal for Step 4. |
-| `submoduleBumps` | `[{ path, from, to }]` gitlink pointer bumps (empty for most PRs). |
-| `warnings` | Non-fatal notes (e.g. stale target fetch, B-031) -- surface to the user. |
+| `submoduleBumps` | `[{ path, from, to, commits? }]` gitlink pointer bumps (empty for most PRs; `commits` present only when submodule enrichment resolved the range). |
+| `enrichment` | `{ submodules, configSource, submoduleUpdate, setup, hint? }` -- what the opt-in enrichment did. If `hint` is present (plugin mode, nothing configured), surface it ONCE, non-blocking. |
+| `warnings` | Non-fatal notes (stale target fetch B-031, degraded enrichment) -- surface to the user. |
 
 Exit codes: `0` = ok; `1` = bad arguments; `2` = git setup failure (worktree unavailable / source fetch / add) -- on non-zero STOP and surface the JSON `error` field.
 
@@ -57,7 +61,7 @@ Step 3's script already computed and persisted the change set -- no extra `git` 
 - Changed-file list: `pr-review/{repo}/{prId}/changed-files.txt` (count = `worktreeInfo.changedFiles`).
 - Full patch for Step 7 subagents: `worktreeInfo.diffFile` (`pr-review/{repo}/{prId}/diff.txt`) -- the Step 7 dispatch template references this exact path.
 - Size: `worktreeInfo.additions` / `worktreeInfo.deletions`.
-- Submodule pointer bumps: `worktreeInfo.submoduleBumps`. If non-empty, note each `{path}: {from}..{to}` in the review -- a bare gitlink bump hides the submodule's real change (deep submodule diff is opt-in; see `providers/_index.md`).
+- Submodule pointer bumps: `worktreeInfo.submoduleBumps`. If non-empty, note each `{path}: {from}..{to}` in the review. When submodule enrichment is enabled, a bump also carries `commits` (the resolved `from..to` log) -- summarize those instead of the bare pointer, since a lone gitlink bump hides the submodule's real change. Deep diff is opt-in (see `providers/_index.md`).
 
 > **Empty diff on an already-merged PR**: the `target...source` range yields an empty patch when the source is already an ancestor of the target (the PR was merged). Normal reviews never hit this -- Step 1 skips non-`active` PRs -- but when you deliberately review a merged PR (a Step 1 override), fall back to the provider's `fetchDiff` recipe (GitHub: `gh pr diff {prId}`; see `providers/{pr-platform}.md`) so Step 7 analyzes the real change set, not an empty file.
 
