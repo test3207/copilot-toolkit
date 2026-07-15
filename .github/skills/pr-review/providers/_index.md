@@ -27,7 +27,7 @@ Every `providers/{name}.md` MUST contain these sections, in this order, with the
 Optional sections (use when applicable):
 
 - `## fetchDiff` — override if the platform needs something other than `git diff origin/{target}...HEAD`.
-- `## setupWorktree` — override ONLY the Step 3 *fetch + worktree-add* block, for a platform that can't resolve the source ref via `git fetch origin {sourceBranch}` (e.g. a GitHub fork PR, whose head is not on `origin` — fetch `refs/pull/{prId}/head` and add from `FETCH_HEAD`). The override does NOT replace Step 3's shared scaffolding (output-dir creation, `pr-review/.gitignore`, pre-clean/prune) or its exit-code checks — those always run. The resulting worktree MUST land at the standard path `pr-review/{repo}/{prId}/worktree` — Step 4 diffs and Step 7 subagents hard-code that location. No built-in provider ships this override yet, so **fork-PR review is not currently supported** on any provider.
+- `## setupWorktree` — documents a platform-specific source-ref fetch when `git fetch origin {sourceBranch}` can't resolve the PR head (e.g. a GitHub fork PR, whose head is not on `origin` — it lives at `refs/pull/{prId}/head`). Step 3's `scripts/pr-review-worktree.mjs setup` owns the entire worktree flow (availability probe, output scaffold + self-ignore, pre-clean/prune, fetch source+target, detached add, diff + submodule-bump summary) and fetches `origin/{sourceBranch}`; it does not yet accept a custom source ref, so **fork-PR review is not currently supported** on any provider. The searchable worktree always lands at `pr-review-worktree/{repo}/{prId}/worktree` (NOT ignored) and outputs at `pr-review/{repo}/{prId}` (self-ignored) — Step 4 and Step 7 subagents hard-code those locations.
 
 ### Standard `prInfo` object
 

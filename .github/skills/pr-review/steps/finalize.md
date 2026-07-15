@@ -80,15 +80,13 @@ Run the **postComment** recipe for the access method resolved in Step 0 (from `p
 
 ### 9.3 Remove the isolated worktree
 
-The review never touched the user's working tree, so there's nothing to restore -- just delete the per-review worktree (the output `*.md` files live one level up and stay).
+The review never touched the user's working tree, so there's nothing to restore -- just delete the per-review worktree. The same script that built it tears it down (idempotent: a partially failed run may have already removed it):
 
-```pwsh
-$prId = '{prId}'
-$repo = '{repo}'
-$worktree = "pr-review/$repo/$prId/worktree"
-# Idempotent: a partially failed run may have already removed it -- don't error if it's gone.
-if (Test-Path $worktree) { git worktree remove --force "$worktree" }
-git worktree prune
+```sh
+node .copilot-toolkit/scripts/pr-review-worktree.mjs cleanup \
+  --repo-path {repoContext.path} --repo {repo} --pr-id {prId}
 ```
+
+This runs `git -C {repoContext.path} worktree remove --force` + `prune` and deletes the `pr-review-worktree/{repo}/{prId}/worktree` dir. The output `*.md` files under `pr-review/{repo}/{prId}` live in the separate self-ignored tree and stay.
 
 > ICM Comment is NOT posted automatically. It is saved in `90-icm.md` for the user to copy-paste into ICM when the PR fixes an incident.

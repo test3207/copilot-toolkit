@@ -60,7 +60,7 @@ fileLinkTemplate: {fileLinkTemplate from Step 5}        # Template with {path}/{
 forbiddenAutoLinkPatterns: {forbiddenAutoLinkPatterns from Step 5}   # Regex list. Never emit text that matches these; use the safe replacements shown in the table.
 Intent: {one-line from Step 6}
 Change Type: {Step 6}
-Repo path: pr-review/{repo}/{prId}/worktree              # isolated git worktree checked out to the PR source branch. Read ALL source files from here -- it reflects the PR head and reading it never disturbs the user's live tree. Do NOT read source from the host repo root. This path is under the self-ignored `pr-review/` tree, so `grep_search` MUST pass `includeIgnoredFiles: true` (scoped to this path) and you open files with `read_file`; `file_search`/`semantic_search` do NOT see the ignored worktree -- use `grep_search`.
+Repo path: pr-review-worktree/{repo}/{prId}/worktree    # isolated git worktree checked out to the PR source branch. Read/search ALL source files from here -- it reflects the PR head and reading it never disturbs the user's live tree. Do NOT read source from the host repo root. This tree is NOT ignored, so `grep_search`, `file_search`, and `semantic_search` all reach it -- scope searches to it via `includePattern` set to this path (no `includeIgnoredFiles`). Search division: grep/file/semantic search here for discovery + cross-references; `read_file` here for a changed file's full content; the exact change set is pr-review/{repo}/{prId}/diff.txt (do NOT re-run `git diff`).
 Target branch: {targetBranch}
 Changed files: see pr-review/{repo}/{prId}/diff.txt
 Anti-pattern groups to load: {list of file paths from Step 6 scan}

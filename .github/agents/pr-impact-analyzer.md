@@ -21,7 +21,7 @@ You will receive:
 - **Modified functions/methods**: list of changed functions with file paths
 - **Change type**: Config/UI/Signature/Logic/API (determines analysis depth)
 - **Intent summary**: what the PR is trying to do
-- **Repo path**: the isolated git worktree checked out to the PR source branch -- read all source files from here (it reflects the PR head; reading it never disturbs the user's live tree). It is under the self-ignored `pr-review/` tree, so search it with `grep_search` + `includeIgnoredFiles: true` (scoped to this path) and open files with `read_file`; `file_search`/`semantic_search` will NOT see it.
+- **Repo path**: the isolated git worktree checked out to the PR source branch at `pr-review-worktree/{repo}/{prId}/worktree` -- read/search all source files from here (it reflects the PR head; reading it never disturbs the user's live tree). This tree is NOT ignored, so `grep_search`, `file_search`, and `semantic_search` all reach it -- scope searches to it with `includePattern` set to this path (no `includeIgnoredFiles` needed). **Search division**: grep/file/semantic search here for discovery and cross-references; read a changed file's full content with `read_file` at this path; read the exact change set from `pr-review/{repo}/{prId}/diff.txt` (do NOT re-run `git diff`).
 - **Anti-pattern groups to load**: list of file paths
 
 You build your own per-caller table, co-writer table, and reachability matrix internally. The main agent stopped pre-building them.

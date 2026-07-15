@@ -22,70 +22,46 @@ Run the **getThreads** recipe from `providers/{pr-platform}.md`. Filter out bot/
 
 ## Step 3: Create Isolated Worktree (parallel-safe)
 
-Instead of checking the PR branch out in the shared working tree (which fights concurrent reviews and disturbs the user's own checkout), create a dedicated git worktree per review. Two reviews of different PRs in the same repo run in parallel because each gets its own detached HEAD; the user's working tree is never touched.
+Instead of checking the PR branch out in the shared working tree (which fights concurrent reviews and disturbs the user's own checkout), create a dedicated git worktree per review. Two reviews of different PRs run in parallel because each gets its own detached HEAD; the user's working tree is never touched.
 
-The isolation guarantee is across DIFFERENT PRs (distinct `{prId}` -> distinct worktree path). Reviewing the SAME PR more than once in one workspace is out of scope -- the pre-clean below assumes at most one live worktree per PR, so a second concurrent run of the same PR would drop the first's worktree.
+`scripts/pr-review-worktree.mjs` does all the deterministic git glue in one Node run (the "recipe glue = Node script" rule -- no inline multi-step shell): probe worktree availability, scaffold the self-ignored output tree, pre-clean/prune any interrupted prior run, fetch source + target, add the detached worktree, then compute the diff + submodule-bump summary. Every git call runs against `{repoContext.path}` via `git -C`, so it works whether the reviewed repo is the workspace root (`path: "."`, plugin mode) or a git submodule (`path: "repos/<name>"`, L2 mode).
 
-Step 3 has two parts: a **shared scaffolding** block that ALWAYS runs, and a **fetch + worktree-add** block that a provider `## setupWorktree` override MAY replace (see `providers/_index.md`). An override substitutes ONLY the second block -- the scaffolding (output dir, self-ignore, pre-clean/prune) and the exit-code discipline stay with the default, so Step 4's `diff.txt` redirection always has its directory and no failed git step continues silently.
+Run:
 
-```pwsh
-$prId = '{prId}'
-$repo = '{repo}'
-$worktree = "pr-review/$repo/$prId/worktree"
-
-# --- Shared scaffolding (ALWAYS run, never overridden by setupWorktree) ---
-# HARD REQUIREMENT: git worktree must be available (git >= 2.5). No fallback -- abort if not.
-git worktree list *> $null
-if ($LASTEXITCODE -ne 0) { throw 'git worktree unavailable -- pr-review requires git >= 2.5' }
-
-# Self-ignore the whole output tree (incl. the worktree) so the host repo never sees it as untracked.
-# Step 4 redirects diff.txt here, so this dir MUST exist regardless of any setupWorktree override.
-New-Item -ItemType Directory -Force -Path "pr-review/$repo/$prId" | Out-Null
-Set-Content -Path 'pr-review/.gitignore' -Value '*'
-
-# Pre-clean UNCONDITIONALLY: an interrupted prior run can leave a registered-but-missing worktree
-# (=> `git worktree add` exit 128) or, inversely, an on-disk dir whose registration was lost
-# (=> `'<path>' already exists`). Clear the registration AND any leftover dir, then prune.
-if (Test-Path $worktree) { git worktree remove --force "$worktree" 2>$null; Remove-Item -Recurse -Force $worktree -ErrorAction SilentlyContinue }
-git worktree prune
-
-# --- Fetch + worktree-add (default; a provider `## setupWorktree` replaces ONLY this block) ---
-# On Windows the deep worktree path can exceed MAX_PATH -- enable core.longpaths if `add` fails on path length.
-# PowerShell does NOT stop on a non-zero native exit, so check $LASTEXITCODE explicitly after each git step.
-git --no-pager fetch origin {sourceBranch}
-if ($LASTEXITCODE -ne 0) { throw "fetch of source branch '{sourceBranch}' failed -- cannot build the review worktree" }
-git --no-pager fetch origin {targetBranch}
-if ($LASTEXITCODE -ne 0) { Write-Warning "fetch of target branch '{targetBranch}' failed -- diff base may be stale (B-031)" }
-
-# Detached HEAD at the fetched source ref -- a branch can be checked out in only one worktree,
-# so detaching keeps the user's own checkout of the same branch collision-free.
-git worktree add --detach "$worktree" "origin/{sourceBranch}"
-if ($LASTEXITCODE -ne 0) { throw "git worktree add failed (exit $LASTEXITCODE) -- on Windows a MAX_PATH error needs core.longpaths=true" }
+```sh
+node .copilot-toolkit/scripts/pr-review-worktree.mjs setup \
+  --repo-path {repoContext.path} --repo {repo} --pr-id {prId} \
+  --source {sourceBranch} --target {targetBranch}
 ```
 
-> Fetching both branches avoids the stale-diff issue (B-031): if local `origin/{targetBranch}` is behind, the `target...HEAD` diff includes surplus context that no longer exists on the effective merge target.
-> The worktree lives under the self-ignored `pr-review/` tree and is removed in Step 9.3.
+The script prints ONE JSON object to stdout -- capture it as `worktreeInfo`:
+
+| Field | Use |
+| ----- | --- |
+| `worktree` | Absolute path of the searchable worktree (`pr-review-worktree/{repo}/{prId}/worktree`, NOT ignored). Subagents grep/read here. |
+| `outDir` | `pr-review/{repo}/{prId}` (self-ignored) -- holds `diff.txt`, `changed-files.txt`, sections. |
+| `diffFile` | Full-patch path for Step 7 subagents. |
+| `changedFiles` / `additions` / `deletions` | Change-size signal for Step 4. |
+| `submoduleBumps` | `[{ path, from, to }]` gitlink pointer bumps (empty for most PRs). |
+| `warnings` | Non-fatal notes (e.g. stale target fetch, B-031) -- surface to the user. |
+
+Exit codes: `0` = ok; `1` = bad arguments; `2` = git setup failure (worktree unavailable / source fetch / add) -- on non-zero STOP and surface the JSON `error` field.
+
+> The worktree lives at a NON-ignored, in-workspace path so VS Code grep / file / semantic search reach it directly (search cannot see system-temp or ignored files). Review OUTPUT artifacts stay under the self-ignored `pr-review/` tree. The worktree is removed in Step 9.3.
+> Isolation is guaranteed across DIFFERENT PRs (distinct `{prId}` -> distinct worktree path). Reviewing the SAME PR twice in one workspace is out of scope -- the pre-clean assumes at most one live worktree per PR, so a second concurrent run of the same PR would drop the first's worktree.
 
 ## Step 4: Get Changed Files
 
-All diffs run against the isolated worktree (`git -C "$worktree"`), whose detached HEAD is the PR source ref -- so `origin/{targetBranch}...HEAD` is identical to before, without touching the user's tree.
+Step 3's script already computed and persisted the change set -- no extra `git` needed. Read from `worktreeInfo`:
 
-```pwsh
-$prId = '{prId}'
-$repo = '{repo}'
-$worktree = "pr-review/$repo/$prId/worktree"
-git -C "$worktree" --no-pager diff --name-only origin/{targetBranch}...HEAD
-git -C "$worktree" --no-pager diff --stat origin/{targetBranch}...HEAD
-# MANDATORY: persist the full patch so Step 7 subagents can read it without re-running git diff.
-# The Step 7 dispatch template references this exact path; do NOT skip this command.
-# Redirection is relative to the shell cwd (host repo), so diff.txt lands beside the worktree, not inside it.
-# (The pr-review/$repo/$prId dir + pr-review/.gitignore were already created in Step 3.)
-git -C "$worktree" --no-pager diff origin/{targetBranch}...HEAD > "pr-review/$repo/$prId/diff.txt"
-```
+- Changed-file list: `pr-review/{repo}/{prId}/changed-files.txt` (count = `worktreeInfo.changedFiles`).
+- Full patch for Step 7 subagents: `worktreeInfo.diffFile` (`pr-review/{repo}/{prId}/diff.txt`) -- the Step 7 dispatch template references this exact path.
+- Size: `worktreeInfo.additions` / `worktreeInfo.deletions`.
+- Submodule pointer bumps: `worktreeInfo.submoduleBumps`. If non-empty, note each `{path}: {from}..{to}` in the review -- a bare gitlink bump hides the submodule's real change (deep submodule diff is opt-in; see `providers/_index.md`).
 
-> **Empty diff on an already-merged PR**: the `target...HEAD` form yields an empty patch when the head is already an ancestor of the target (i.e. the PR was merged). Normal reviews never hit this -- Step 1 skips non-`active` PRs -- but when you deliberately review a merged PR (a Step 1 override), fall back to the provider's `fetchDiff` recipe (GitHub: `gh pr diff {prId}`; see `providers/{pr-platform}.md`) so Step 7 analyzes the real change set, not an empty file.
+> **Empty diff on an already-merged PR**: the `target...source` range yields an empty patch when the source is already an ancestor of the target (the PR was merged). Normal reviews never hit this -- Step 1 skips non-`active` PRs -- but when you deliberately review a merged PR (a Step 1 override), fall back to the provider's `fetchDiff` recipe (GitHub: `gh pr diff {prId}`; see `providers/{pr-platform}.md`) so Step 7 analyzes the real change set, not an empty file.
 
-**Context budget signal**: If changed files > 30 OR diff lines > 800, set `contextPressure = high`. This signals only -- subagents in Step 7 are mandatory regardless of this flag.
+**Context budget signal**: If `worktreeInfo.changedFiles` > 30 OR diff lines > 800, set `contextPressure = high`. This signals only -- subagents in Step 7 are mandatory regardless of this flag.
 
 ## Step 5: Create section dir + header + metadata + build fileLinkTemplate
 
