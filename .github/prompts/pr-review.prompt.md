@@ -69,19 +69,14 @@ PR review entry point. Owns the MCP `tools:` allowlist (above). The workflow bod
 
 When user runs `/pr-review review pr <prId or link>`:
 
-1. **Resolve input** (Step 0):
-   - Compute `$toolkitRoot = if (Test-Path '.copilot-toolkit/.github') { '.copilot-toolkit/.github' } else { '.github' }` — every downstream skill / subagent receives this as `toolkit-root` so they can locate their own files at runtime.
-   - Run `node .copilot-toolkit/scripts/parse-input.mjs "<input>"` to parse PR ID or URL (path assumes submodule / sync mount; if you self-host the toolkit by checking it out as the workspace root, drop the `.copilot-toolkit/` prefix).
-   - **Registry-first**: read `.github/prompts/workflows/registry/index.md` (consumer-side) and try to match the repo. If matched, read `.github/prompts/workflows/registry/<matched-repo>.md` for full metadata — this is `repoContext` (registry mode; behaves exactly as before).
-   - **Derive-fallback** (ONLY when no registry index exists, or no entry matches): build `repoContext` at runtime instead of stopping. This lets a consumer review a PR in its own single repo without authoring a registry entry.
-     1. `node .copilot-toolkit/scripts/derive-repo-context.mjs "$(git --no-pager remote get-url origin)"` → `{ platform, org/project/repoName (ADO) | owner/repoName (GitHub/GitLab) }`. Set `pr-platform = platform` and `repo = repoName`. If `platform == unknown` (no `origin`, or unsupported host), STOP and ask the user to add a registry entry or a `.github/pr-review.json`.
-     2. Set `path = .` (the workspace root IS the repo). `targetBranch` is taken from the PR object inside the skill (Step 1), not needed up front.
-     3. Read optional consumer file `.github/pr-review.json` (repo root) for the non-derivable fields + overrides — see [SKILL.md](../skills/pr-review/SKILL.md) → *Optional `.github/pr-review.json`* for the schema. Any present field augments/overrides the derived values; an absent file means pure defaults.
-     4. If `platform == ado` and no `repo-guid` was supplied, the skill resolves it via the provider's "get repo by name" recipe using the configured `ado-repo-server` (else the first ADO MCP server).
-   - **Preflight (env doctor)**: run `node .copilot-toolkit/scripts/preflight.mjs --platform {repoContext.pr-platform} --mcp-configured <true|false>` (`true` when an `ado-repo-server` resolved). It probes node / git / the platform auth CLI (`az` or `gh`). If the report's `blocking` is non-empty (node, git, or the platform credential `az`/`gh` missing), STOP and print the `remediation` entries -- there is no offline mode. Otherwise set `repoContext.ado-access` (ADO) / `gh-access` (GitHub) = the explicit `.github/pr-review.json` value if present, else the report's `access.recommended`.
-   - Both modes yield one `repoContext` object of the same shape the skill consumes.
-2. **Invoke skill `pr-review`** with: `toolkit-root: $toolkitRoot`, `prId`, and `repoContext` (registry metadata OR derived): `path`, `targetBranch`, `pr-platform`, `ado-repo-server` + `repo-guid` if ADO, coding-standards list (registry list when present; else language-autodetected — see SKILL.md), anti-pattern allowlist.
-3. Follow the skill's [SKILL.md](../skills/pr-review/SKILL.md) — it owns the workflow (Steps 0-9), provider seam, subagent dispatch, and PR-comment assembly.
+1. **Resolve input** (Step 0) — full detail in [SKILL.md](../skills/pr-review/SKILL.md) → *Input Resolution (Step 0)*:
+   - `$toolkitRoot = if (Test-Path '.copilot-toolkit/.github') { '.copilot-toolkit/.github' } else { '.github' }` — passed to every skill / subagent as `toolkit-root` so they locate their own files at runtime.
+   - `node .copilot-toolkit/scripts/parse-input.mjs "<input>"` → PR ID or URL. (Self-hosting the toolkit at the workspace root: drop the `.copilot-toolkit/` prefix.)
+   - **Registry-first**: match the repo in `.github/prompts/workflows/registry/index.md`; if matched, its `<repo>.md` entry is `repoContext` (registry mode).
+   - **Derive-fallback** (no index / no match): `node .copilot-toolkit/scripts/derive-repo-context.mjs "$(git --no-pager remote get-url origin)"` → `{ platform, repoName, … }`; set `pr-platform`, `repo`, `path = .`; merge optional `.github/pr-review.json` overrides. `platform == unknown` → STOP and ask for a registry entry or `.github/pr-review.json`.
+   - **Preflight**: `node .copilot-toolkit/scripts/preflight.mjs --platform {repoContext.pr-platform} --mcp-configured <true when an ado-repo-server resolved>`. Non-empty `blocking` (node / git / `az` / `gh`) → STOP with `remediation` (no offline mode). Else set `ado-access` / `gh-access` = `.github/pr-review.json` override, else `access.recommended`.
+2. **Invoke skill `pr-review`** with `toolkit-root: $toolkitRoot`, `prId`, and the resolved `repoContext` (field list in SKILL.md).
+3. Follow [SKILL.md](../skills/pr-review/SKILL.md) — it owns the workflow (Steps 0-9), provider seam, subagent dispatch, and PR-comment assembly.
 
 ## my prs Command
 

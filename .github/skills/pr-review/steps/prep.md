@@ -28,13 +28,10 @@ Instead of checking the PR branch out in the shared working tree (which fights c
 
 **Enrichment config (optional)**: the script reads the reviewed repo's own `.github/pr-review.json` `worktree` block (L3, from the base checkout) automatically. If instead the registry entry carries a `worktree` block (L2), write it to a JSON file with `create_file` (e.g. `pr-review/{repo}/{prId}/worktree-config.json`) and pass `--config <that path>` -- L3 still overrides L2 if both exist. If the registry has no `worktree` block, omit `--config`. See `providers/_index.md` → *Worktree enrichment config precedence*.
 
-Run:
-
 ```sh
 node .copilot-toolkit/scripts/pr-review-worktree.mjs setup \
   --repo-path {repoContext.path} --repo {repo} --pr-id {prId} \
-  --source {sourceBranch} --target {targetBranch} \
-  [--config pr-review/{repo}/{prId}/worktree-config.json]
+  --source {sourceBranch} --target {targetBranch}
 ```
 
 The script prints ONE JSON object to stdout -- capture it as `worktreeInfo`:
@@ -69,13 +66,11 @@ Step 3's script already computed and persisted the change set -- no extra `git` 
 
 ## Step 5: Create section dir + header + metadata + build fileLinkTemplate
 
-```pwsh
-$prId = '{prId}'
-$repo = '{repo}'
-New-Item -ItemType Directory -Force -Path "pr-review/$repo/$prId/sections" | Out-Null
-# Clean any prior section files so subagent `create_file` doesn't collide
-Remove-Item "pr-review/$repo/$prId/sections/*.md" -ErrorAction SilentlyContinue
+```sh
+node .copilot-toolkit/scripts/pr-review-assemble.mjs init --repo {repo} --pr-id {prId}
 ```
+
+This creates `pr-review/{repo}/{prId}/sections/` and clears any prior `*.md` so a subagent's `create_file` doesn't collide on re-run.
 
 From the provider file's `fileLinkTemplate` definition, substitute every host/registry/`prInfo`-derived placeholder (e.g. `{org}`, `{repo}`, `{prId}`, `{headSha}`) using the values from Step 1 + the matched registry entry. The result is `fileLinkTemplate` -- a string containing ONLY the per-finding placeholders `{path}`, `{startLine}`, `{endLine}`. Remember this string for Step 7 dispatch and Step 8 Action Items.
 

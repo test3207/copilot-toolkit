@@ -29,48 +29,24 @@ The main agent operates ONLY on the compact summaries returned by 7a-7d. Do NOT 
 
 ### 9.1 Assemble `review.md` (terminal concat -- no context load)
 
-```pwsh
-$prId = '{prId}'
-$repo = '{repo}'
-# Explicit blank-line delimiter between sections. Plain Get-Content -Raw | Set-Content concatenates without a separator,
-# so any section file missing a trailing newline collapses into the next heading. TrimEnd + -join '`n`n' is safe regardless.
-$sections = Get-ChildItem "pr-review/$repo/$prId/sections/*.md" | Sort-Object Name
-$body = ($sections | ForEach-Object { (Get-Content -Raw $_.FullName).TrimEnd("`r","`n") }) -join "`n`n"
-($body + "`n") | Set-Content -Encoding UTF8 "pr-review/$repo/$prId/review.md"
+```sh
+node .copilot-toolkit/scripts/pr-review-assemble.mjs review --repo {repo} --pr-id {prId}
 ```
+
+Concatenates `sections/*.md` (filename order) into `review.md` with an explicit blank-line delimiter, so a section missing a trailing newline never collapses into the next heading.
 
 ### 9.1b File-link + auto-link sanity check (HARD GATE before posting)
 
-```pwsh
-$prId = '{prId}'
-$repo = '{repo}'
-# Check 1: any markdown link whose target is not an absolute URL is a workspace-relative path -- forbidden in the posted comment.
-$badLinks = Select-String -Path "pr-review/$repo/$prId/pr-comment.md" -Pattern '\]\((?!https?:|mailto:|#)' -AllMatches
+Write the provider's `forbiddenAutoLinkPatterns` (built in Step 5) to a JSON file with `create_file`, then run the gate:
 
-# Check 2: each forbiddenAutoLinkPatterns entry from the provider (built in Step 5). Loop and abort on any match.
-# The patterns + safe replacements live in providers/{pr-platform}.md; the agent runs one Select-String per row.
-$violations = @()
-foreach ($p in $forbiddenAutoLinkPatterns) {
-    $hits = Select-String -Path "pr-review/$repo/$prId/pr-comment.md" -Pattern $p.pattern -AllMatches
-    if ($hits) {
-        $violations += [pscustomobject]@{ pattern = $p.pattern; autoLinksTo = $p.autoLinksTo; safe = $p.safeReplacement; hits = $hits }
-    }
-}
-
-if ($badLinks) {
-    Write-Error "Found workspace-relative links in pr-comment.md -- fix before posting:`n$($badLinks | Out-String)"
-}
-if ($violations) {
-    Write-Error "Found auto-link patterns in pr-comment.md. Replace per providers/{pr-platform}.md autoLinkForbiddenPatterns:`n$($violations | ConvertTo-Json -Depth 4)"
-}
-if ($badLinks -or $violations) {
-    # ABORT: rewrite the offending section files (see your provider's fileLinkTemplate + autoLinkForbiddenPatterns) then re-run 9.1
-} else {
-    Write-Host "OK: all file links absolute, no auto-link patterns."
-}
+```sh
+node .copilot-toolkit/scripts/pr-review-assemble.mjs lint --repo {repo} --pr-id {prId} \
+  --patterns pr-review/{repo}/{prId}/link-patterns.json
 ```
 
-IF either check fails -> STOP. Edit the offending section file(s) directly with `replace_string_in_file`, re-run 9.1 to rebuild review.md, then re-run 9.1b. Do NOT proceed to 9.2 with violations. For the safe replacement to use, look up the matched pattern in `providers/{pr-platform}.md` autoLinkForbiddenPatterns.
+`link-patterns.json` is a JSON array `[{ "pattern", "autoLinksTo", "safeReplacement" }, ...]` copied from the provider's `autoLinkForbiddenPatterns` table (omit `--patterns` only if the provider defines none). The gate checks (1) any markdown link whose target is not an absolute URL / anchor (workspace-relative -- forbidden), and (2) each provider pattern.
+
+Exit `0` = clean, proceed. Exit `3` = the JSON stdout lists `relativeLinks` and `autoLinks` (each with line numbers + the safe replacement) -> STOP: edit the offending section file(s) with `replace_string_in_file`, re-run 9.1 to rebuild `review.md`, then re-run 9.1b. Do NOT proceed to 9.2 with violations.
 
 ### 9.2 Post PR Comment
 
