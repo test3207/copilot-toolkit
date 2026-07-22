@@ -35,7 +35,7 @@ Output artifacts (NOT inside `sections/`, so they don't get re-included by the c
 
 ## Rules
 
-1. **Local-first** - Save content locally before any remote change. Get user confirmation before remote updates.
+1. **Local-first, post-mode-gated** - Always save content locally before any remote change. Whether Step 9.2 posts the PR comment is governed by `post-mode` (resolved in Step 0): `confirm` (default) asks first, `auto` posts unattended, `skip` never posts. Worktree cleanup (Step 9.3) runs regardless.
 2. **Section files are the canonical record** - Each step writes to its own section file. The final `review.md` is a concat artifact, regenerated from sections any time.
 3. **Never replace full PR description** - Only add/modify specific sections when explicitly requested.
 4. **No main-agent reads of `chat-session-resources/*/content.json`** - If you find yourself about to read one, STOP: it's a subagent response blob. The new contract returns small summaries; if you see a blob, the subagent violated its output contract -- log and proceed with the summary it returned, do not read the blob.
@@ -89,6 +89,6 @@ Do NOT:
      -> writes 05-tldr.md, 90-icm.md (conditional), pr-comment.md
   v
 9.1: Terminal concat sections -> review.md
-9.2: Provider postComment (pr-comment.md body -> PR thread)
-9.3: git worktree remove (delete per-review worktree; user's tree was never touched)
+9.2: Provider postComment (pr-comment.md body -> PR thread) -- gated by post-mode (confirm asks / auto posts / skip never)
+9.3: git worktree remove -- unconditional finalizer (runs even if 9.2 declined/skipped/errored; user's tree was never touched)
 ```

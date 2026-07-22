@@ -74,7 +74,7 @@ node .copilot-toolkit/scripts/pr-review-assemble.mjs comment --repo {repo} --pr-
   --meta pr-review/{repo}/{prId}/comment-meta.json
 ```
 
-`comment-meta.json` = `{ "model": "<exact model name from system instructions>", "tool": "<Tool name from SKILL.md Quick Reference, default pr-review>", "version": "<Tool version, e.g. v3.5.0>" }`. The script emits header + TL;DR + Intent + Validation (if present) + ICM (if present) + footer, pulling each from `sections/`; the raw subagent sections `20/30/40-*.md` are intentionally excluded.
+`comment-meta.json` = `{ "model": "<exact model name from system instructions>", "tool": "<Tool name from SKILL.md Quick Reference, default pr-review>", "version": "<Tool version, e.g. v3.5.1>" }`. The script emits header + TL;DR + Intent + Validation (if present) + ICM (if present) + footer, pulling each from `sections/`; the raw subagent sections `20/30/40-*.md` are intentionally excluded.
 
 The PR Comment is the **validated** review -- a curated summary backed by `review.md` for deep dives. NOT a verbatim concat of all subagent output.
 

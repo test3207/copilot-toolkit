@@ -17,7 +17,7 @@
 //   comment --repo <name> --pr-id <id> --meta <json-file>       # provider: build curated pr-comment.md
 //   lint    --repo <name> --pr-id <id> [--patterns <json-file>] # Step 9.1b: HARD GATE before posting
 //
-// --meta json:     { "model": "...", "tool": "pr-review", "version": "v3.5.0" }
+// --meta json:     { "model": "...", "tool": "pr-review", "version": "v3.5.1" }
 // --patterns json: [ { "pattern": "<regex>", "autoLinksTo": "...", "safeReplacement": "..." }, ... ]
 //
 // stdout = one JSON object. Exit: 0 = ok; 1 = usage/precondition error; 3 = lint found violations (STOP).
