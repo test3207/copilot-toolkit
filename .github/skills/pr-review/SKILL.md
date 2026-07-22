@@ -25,13 +25,14 @@ When NOT to use it:
 - `prId` — numeric PR id (already resolved by the entry prompt via `.copilot-toolkit/scripts/parse-input.mjs`).
 - `repo` — repo name (from the matched registry entry in registry mode, or `repoName` from the derived git remote in derive mode).
 - `repoContext` — the metadata bundle the entry prompt resolved, identical shape in both modes: `path`, `targetBranch`, `pr-platform`, `ado-repo-server` + `repo-guid` (if ADO), coding-standards list (registry list, or language-autodetected in derive mode), anti-pattern allowlist. See [Input Resolution (Step 0)](#input-resolution-step-0) for how each field is filled.
+- `post-mode` — `confirm` (default) | `auto` | `skip`, resolved by the entry prompt (Step 0) via `scripts/pr-review-config.mjs`. Gates Step 9.2: `confirm` asks before posting, `auto` posts unattended, `skip` never posts. See [Machine-local `.github/pr-review.local/`](#machine-local-githubpr-reviewlocal).
 
 ## Quick Reference
 
 | Item | Value |
 | ---- | ----- |
 | Tool name | `pr-review` |
-| Tool version | `v3.5.0` |
+| Tool version | `v3.5.1` |
 | Working dir | `pr-review/{repo}/{prId}/sections/*.md` per-section files; `pr-review/{repo}/{prId}/review.md` is the terminal-concat artifact; the persisted diff is `pr-review/{repo}/{prId}/diff.txt`. All OUTPUT lives under `pr-review/`, which the skill self-ignores via a generated `pr-review/.gitignore` (`*`) on first run -- portable, needs no consumer root `.gitignore` or sync. The PR source branch is checked out into an isolated, SEARCHABLE worktree at `pr-review-worktree/{repo}/{prId}/worktree/` (Step 3, via `scripts/pr-review-worktree.mjs`) -- a SEPARATE, NON-ignored tree so VS Code grep / file / semantic search reach it directly. Reviews never mutate the user's working tree and reviews of different PRs run in parallel. Every git call runs against `{repoContext.path}` (`git -C`), so the reviewed repo may be the workspace root (plugin mode) or a submodule (L2 mode). |
 | Providers | [providers/ado.md](./providers/ado.md), [providers/github.md](./providers/github.md). Add a new file under `providers/` for new hosts; no workflow edits required. |
 | Subagents | `.github/agents/pr-logic-reviewer.md` (7a) · `.github/agents/pr-impact-analyzer.md` (7b) · `.github/agents/pr-quality-checker.md` (7c) · `.github/agents/pr-finding-validator.md` (7d). |
@@ -45,6 +46,7 @@ Performed by the entry prompt, then handed to this skill. Two modes, one output 
 3. **Derive-fallback** (only when no registry index exists, or no entry matches): build `repoContext` at runtime — `node .copilot-toolkit/scripts/derive-repo-context.mjs "$(git --no-pager remote get-url origin)"` for `{ platform, org/project/repoName | owner/repoName }`; `path = .`; merge any [`.github/pr-review.json`](#optional-githubpr-reviewjson) fields; auto-detect coding-standards / anti-pattern language packs from the diff (see [steps/analyze.md](./steps/analyze.md) Step 6). If `platform == unknown` and no config file supplies one, STOP.
 4. Read `repoContext.pr-platform` (default `ado`). Load [providers/{pr-platform}.md](./providers/) — every PR-host-specific recipe (fetch, post, URL format, auto-link rules) comes from this file. The workflow body is host-agnostic.
 5. **Preflight + access method**: run `node .copilot-toolkit/scripts/preflight.mjs --platform {pr-platform} --mcp-configured <ado-repo-server present?>`. Resolve the provider access method (`ado-access` / `gh-access`) = `.github/pr-review.json` override else the report's `access.recommended`. A missing hard dep (node / git, or the platform credential `az`/`gh`) STOPS with remediation -- there is no offline mode. See [providers/{pr-platform}.md](./providers/) → `accessMethods`.
+6. **Post-mode**: run `node .copilot-toolkit/scripts/pr-review-config.mjs resolve --repo-path {path} [--post-mode <cli flag>]` → `postMode` (`confirm` default | `auto` | `skip`), which gates Step 9.2. Precedence: CLI `--auto`/`--confirm`/`--skip-post` > machine-local `.github/pr-review.local/config.json` > `confirm`. On `firstRun: true`, surface the returned `notice` once. See [Machine-local `.github/pr-review.local/`](#machine-local-githubpr-reviewlocal).
 
 ## Optional `.github/pr-review.json`
 
@@ -72,6 +74,21 @@ A consumer-owned file at the **reviewed repo's** root, used only in derive mode 
 Any present field augments/overrides the corresponding derived value. The schema mirrors the registry entry keys so registry mode and derive mode stay interchangeable.
 
 **The `worktree` block is the one exception to "registry mode ignores this file".** It is L3-owned (the repo knows its own build), so its precedence is **reviewed-repo `.github/pr-review.json` > registry entry `worktree` > default OFF** — even in registry mode. Step 3's `scripts/pr-review-worktree.mjs` reads it from the **base checkout** (never the PR source branch), so a malicious PR cannot inject `setup` commands. Enable it **only for repos you trust**: `submodules` exercises the recursive-clone RCE surface (CVE-2018-11235) and `setup` runs arbitrary shell (postinstall RCE). Any enrichment failure degrades to a non-blocking warning; when nothing is configured in plugin mode the script emits a one-line hint the main agent surfaces once.
+
+## Machine-local `.github/pr-review.local/`
+
+Machine-local, NEVER-committed preferences for the reviewed repo. Holds `config.json` with a single `post-mode` key. The folder self-ignores via its own generated `.gitignore` (`*`) -- like the `pr-review/` output tree, it needs no edit to the repo's root `.gitignore`.
+
+```jsonc
+{
+  "post-mode": "confirm"   // confirm (default) | auto | skip -- gates Step 9.2 posting
+}
+```
+
+- Resolved in Step 0 by `scripts/pr-review-config.mjs`; precedence **CLI flag (`--auto`/`--confirm`/`--skip-post`) > `config.json` > default `confirm`**.
+- `confirm` (default) = ask before Step 9.2 posts (current behavior). `auto` = post unattended (full hands-off run). `skip` = never post; keep the local `pr-comment.md` only (dry-run).
+- **`auto` is deliberately kept OUT of committed config** (registry entry / `.github/pr-review.json`): unattended posting to a real PR is an operator/machine trust decision, not a repo-shared property -- if it rode into the repo, every checkout would silently inherit it. So it lives only here (machine-local) or in a per-call `--auto` flag; the safe default is always `confirm`.
+- **First-run auto-init**: on an interactive run with no flag and no `config.json`, Step 0's script scaffolds this folder (default `confirm`), self-ignores it, and surfaces a one-time notice (three modes + the `auto` safety warning). A CLI flag (unattended / CI path) writes nothing.
 
 ## Workflow
 
@@ -102,7 +119,12 @@ Orchestration entry point is [workflow.md](./workflow.md); it indexes three step
 
 When posting review comments to PR:
 
-1. **Default path = provider's `postComment` recipe** (Step 9.2 in workflow.md). Each provider picks its own primary: MCP-first for providers with an MCP server (e.g. ADO `repo_create_pull_request_thread`); CLI-first for providers without (e.g. GitHub `gh pr comment`, body piped from `pr-review/{repo}/{prId}/pr-comment.md` without entering main-agent context).
+1. **Posting is gated by `post-mode`** (resolved in Step 0 -- see [Machine-local `.github/pr-review.local/`](#machine-local-githubpr-reviewlocal)):
+   - `confirm` (default): show the verdict, Action-Item count, and the local `pr-comment.md` path, ask the user to confirm, and run the provider's `postComment` recipe only on **yes**.
+   - `auto`: run `postComment` immediately, no prompt (full hands-off).
+   - `skip`: never post; report the local `pr-comment.md` path only.
+
+   The provider's `postComment` recipe (Step 9.2) is unchanged -- each provider picks its own primary: MCP-first for providers with an MCP server (e.g. ADO `repo_create_pull_request_thread`); CLI-first for providers without (e.g. GitHub `gh pr comment`, body piped from `pr-review/{repo}/{prId}/pr-comment.md` without entering main-agent context). Worktree cleanup (Step 9.3) runs regardless of mode.
 2. **Fallback** — only if the primary path fails: use the provider's documented fallback (ADO: terminal REST `POST .../threads`, body never enters main-agent context; GitHub: REST `POST /issues/{n}/comments`). Always create NEW comment / thread, never reply.
 3. **AI attribution header is built INTO the section template** (see [reference.md](./reference.md) → PR Comment section file template):
 
@@ -116,7 +138,7 @@ When posting review comments to PR:
 
    - `<model_name>`: state your exact model name as defined in your system instructions. Do not guess.
    - `<tool_name>`: the **Tool name** value from the Quick Reference table above (currently `pr-review`). Use exactly that string.
-   - `<tool_version>`: the **Tool version** value from the Quick Reference table above (currently `v3.5.0`). Use exactly that string -- do not substitute a different version.
+   - `<tool_version>`: the **Tool version** value from the Quick Reference table above (currently `v3.5.1`). Use exactly that string -- do not substitute a different version.
 4. **Post the full assembled body** — the section template concats TL;DR + Action Items + Intent + Validation (+ ICM if applicable). Do NOT condense or rewrite from memory.
 5. **ICM Comment is NOT posted to PR** — it is saved in `sections/90-icm.md` for manual copy-paste.
 

@@ -48,15 +48,21 @@ node .copilot-toolkit/scripts/pr-review-assemble.mjs lint --repo {repo} --pr-id 
 
 Exit `0` = clean, proceed. Exit `3` = the JSON stdout lists `relativeLinks` and `autoLinks` (each with line numbers + the safe replacement) -> STOP: edit the offending section file(s) with `replace_string_in_file`, re-run 9.1 to rebuild `review.md`, then re-run 9.1b. Do NOT proceed to 9.2 with violations.
 
-### 9.2 Post PR Comment
+### 9.2 Post PR Comment (gated by `post-mode` from Step 0)
 
-Run the **postComment** recipe for the access method resolved in Step 0 (from `providers/{pr-platform}.md`):
+Branch on `postMode`:
+
+- **`confirm`** (default): show the verdict, Action-Item count, and the local `pr-comment.md` path, then ask the user to confirm. On **yes**, run the `postComment` recipe below; on **no**, skip posting (keep the local artifacts) and continue to 9.3.
+- **`auto`**: run `postComment` immediately, no prompt (full hands-off).
+- **`skip`**: do NOT post; report the local `pr-comment.md` path and continue to 9.3.
+
+When posting, run the **postComment** recipe for the access method resolved in Step 0 (from `providers/{pr-platform}.md`):
 
 - `mcp` / `cli` / `rest`: post via that method's recipe. For `mcp`, fall through to the REST recipe only if the call fails for an auth / tenant / availability reason, or when the provider's Note flags a ctx tradeoff worth taking.
 
-### 9.3 Remove the isolated worktree
+### 9.3 Remove the isolated worktree (unconditional finalizer)
 
-The review never touched the user's working tree, so there's nothing to restore -- just delete the per-review worktree. The same script that built it tears it down (idempotent: a partially failed run may have already removed it):
+Runs on EVERY exit of Step 9.2 -- post succeeded, was declined (`confirm` -> no), skipped (`skip`), or errored. The review never touched the user's working tree, so there's nothing to restore -- just delete the per-review worktree. The same script that built it tears it down (idempotent: a partially failed run may have already removed it):
 
 ```sh
 node .copilot-toolkit/scripts/pr-review-worktree.mjs cleanup \

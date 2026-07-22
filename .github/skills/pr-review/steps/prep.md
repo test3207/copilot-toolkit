@@ -12,6 +12,8 @@ If `providers/{pr-platform}.md` does not exist, STOP and ask the user to author 
 
 **Preflight + access method**: run `node .copilot-toolkit/scripts/preflight.mjs --platform {pr-platform} --mcp-configured <true if repoContext has an ado-repo-server, else false>` (the entry prompt may have already done this and passed the result). If the report's `blocking` is non-empty (node / git / the platform credential `az` or `gh` missing) STOP and surface its `remediation` -- there is no offline mode. Resolve the provider access method (`ado-access` / `gh-access`) = explicit `.github/pr-review.json` override, else the report's `access.recommended`. Steps 1, 2, and 9 run the recipe variant for the resolved method. See `providers/{pr-platform}.md` -> `accessMethods`.
 
+**Resolve post-mode** (gates Step 9.2): `node .copilot-toolkit/scripts/pr-review-config.mjs resolve --repo-path {repoContext.path} [--post-mode <cli flag if the caller passed --auto/--confirm/--skip-post>]`. Capture `postMode` (`confirm` default | `auto` | `skip`). If the JSON has `firstRun: true`, surface its `notice` ONCE (non-blocking: three modes + the `auto` safety warning). The entry prompt may have already resolved this and passed `post-mode` -- if so, skip. Precedence and the machine-local `.github/pr-review.local/` file are documented in SKILL.md.
+
 ## Step 1: Get PR Info
 
 Run the **getPrInfo** recipe from `providers/{pr-platform}.md`. Extract the standard `prInfo` object (fields documented in `providers/_index.md`). Skip the review if `state` is not `active`.
