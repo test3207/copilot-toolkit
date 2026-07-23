@@ -124,8 +124,9 @@ User Action: [what the user does]
 
 **Resolvability Gate — run BEFORE assigning or retaining any Medium+ that rests on a precondition.** A finding's severity often hinges on a deciding precondition `X` (e.g. "IF the config key is unset", "IF this caller passes null"). Before you assign or keep any Medium+ on `IF X` grounds, classify `X`:
 
-- **(i) Determinable-in-repo** -- the answer is in the code / config / tests already in the worktree (e.g. "is `CONFIG_KEY` set in the shipped env blocks?" -> grep; "does this caller pass a non-null arg?" -> read). You **MUST resolve `X` now** (grep/read the worktree); severity then follows the resolved fact. You **may not** retain a Medium+ on `IF X` grounds -- resolving may legitimately drop it to Nit or **refuted**.
+- **(i) Determinable-in-repo** -- the answer is in the code / config / tests already in the worktree (e.g. "is `CONFIG_KEY` set in the shipped env blocks?" -> grep; "does this caller pass a non-null arg?" -> read). You **MUST resolve `X` now** (grep/read the worktree); severity then follows the resolved fact. You **may not** retain a Medium+ on `IF X` grounds -- resolving may legitimately drop it to Nit or **refuted**. (If the in-repo trace genuinely exceeds the review budget, do NOT guess a `refuted` -- treat `X` as class ii below: keep it elevated with the confirmation tag.)
 - **(ii) Irreducibly uncertain** -- needs runtime-only data, external-system behavior, or product/UX intent **not present in the repo**. **Only these** keep the elevated severity, tagged `needs human/author confirmation`. This is what the keep-under-uncertainty rule below is for.
+- **Compound `X`** -- if `X` decomposes into sub-conditions spanning both classes (e.g. an in-repo default that an out-of-repo value can override), **class ii dominates**: keep the finding elevated and tagged; resolve the class-i part only to inform the note. Never mark **refuted** on the class-i part alone -- that silently drops a bug the out-of-repo part can still trigger.
 
 Companion rules:
 - **Red-flag rule**: an `IF <a fact greppable in this repo>` clause left unresolved in your verdict = you punted; it is NOT a terminal verdict. Resolve it before writing the verdict.
@@ -134,9 +135,9 @@ Companion rules:
 For each finding, assign one of:
 - **confirmed** -- standard user workflow triggers the bug, impact is visible
 - **upgraded** -- subagent severity was too low; provide new severity + reason
-- **theoretical** -- only triggerable via unusual/unlikely input; keep severity but note limited impact
-- **refuted** -- a determinable precondition (class i) resolved against the finding: the bug cannot occur in any shipped config. Drop to Nit or remove from Action Items; state the resolving fact (what you grepped/read).
-- **unverifiable** -- irreducibly uncertain (class ii: runtime-only / external-system / product-intent, not in the repo); keep severity, tag `needs human/author confirmation`
+- **theoretical** -- triggerable only via unusual/unlikely *input* (input-likelihood axis); keep severity, note limited impact. NOT for config-reachability: if a class-i precondition proves the bug unreachable in every shipped config, use **refuted**, not `theoretical`.
+- **refuted** -- a determinable (class i) precondition resolved against the finding: the bug cannot occur in any shipped config (config-reachability axis). Drop to Nit or remove from Action Items; state the resolving fact (what you grepped/read).
+- **unverifiable** -- irreducibly uncertain (class ii: runtime-only / external-system / product-intent, not in the repo); keep severity. Append the literal ` (needs human/author confirmation)` after the verdict label everywhere you emit it: the section-table Verdict cell, the per-finding `Verdict:` line, and the response verdict list.
 
 Rules:
 - Apply global detection rules from `anti-patterns/index.md`: simplest repro first, severity floor for standard workflows
@@ -158,7 +159,7 @@ Write to `pr-review/{repo}/{prId}/sections/50-validation.md`:
 
 #### Finding 1: {short description}
 
-- **Verdict**: {confirmed/upgraded/theoretical/refuted/unverifiable}
+- **Verdict**: {confirmed/upgraded/theoretical/refuted/unverifiable -- when unverifiable, append " (needs human/author confirmation)"}
 - **Severity**: {original} -> {adjusted if changed}
 - **Chain**:
   User Action: {what user does}
@@ -183,6 +184,7 @@ Per-finding verdicts (preserve original file links from the input action items u
 - F2 [High]: upgraded -> [Bug] (was [High] [path/to/file.ts#L88](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>))
 - F3 [Medium]: theoretical
 - F4 [Medium]: refuted -> Nit (grepped CONFIG_KEY set in every shipped env block; the reject path is unreachable)
+- F5 [Medium]: unverifiable (needs human/author confirmation) -- depends on a runtime tenant flag not in the repo
 
 Severity changes: F2 [High] -> [Bug]; F4 [Medium] -> Nit
 ```

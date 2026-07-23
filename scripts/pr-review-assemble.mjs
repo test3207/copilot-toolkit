@@ -17,7 +17,7 @@
 //   comment --repo <name> --pr-id <id> --meta <json-file>       # provider: build curated pr-comment.md
 //   lint    --repo <name> --pr-id <id> [--patterns <json-file>] # Step 9.1b: HARD GATE before posting
 //
-// --meta json:     { "model": "...", "tool": "pr-review", "version": "v3.6.2",
+// --meta json:     { "model": "...", "tool": "pr-review", "version": "v3.6.3",
 //                    "verdict": "Approve with Comments",    // optional; else parsed from 05-tldr.md's **Verdict: ...**
 //                    "collapse": ["intent","validation"], // optional; omit = collapse ALL present curated sections; [] = render flat (no <details>)
 //                    "wrap": true }                          // optional; outer whole-comment <details open> (one togglable block per review round); default true
