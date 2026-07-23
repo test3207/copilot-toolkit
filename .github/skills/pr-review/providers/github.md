@@ -132,14 +132,28 @@ Patterns NOT matched by `@<word>` (safe):
 
 ## postComment
 
-`node .copilot-toolkit/scripts/github-rest.mjs post-comment --owner {github-owner} --repo {github-repo} --pr-id {prId} --body-file pr-review/{repo}/{prId}/pr-comment.md` (add `--host {github-host}` for GHES) — creates a top-level PR comment and prints `{ url }`. Prefers `gh`; falls back to REST + `GITHUB_TOKEN`.
+`node .copilot-toolkit/scripts/github-rest.mjs post-review-comment --owner {github-owner} --repo {github-repo} --pr-id {prId} --body-file pr-review/{repo}/{prId}/pr-comment.md --pr-file pr-review/{repo}/{prId}/raw-pr.json --diff-file pr-review/{repo}/{prId}/diff.txt` (add `--host {github-host}` for GHES) — posts the curated comment as a **file-anchored review comment** (`subject_type=file`) and prints `{ url, resolvable }`. Prefers `gh`; falls back to REST + `GITHUB_TOKEN`.
 
-### Why issue comment, not review
+### Why a file-anchored review comment (resolvable)
 
-`POST /repos/{owner}/{repo}/issues/{number}/comments` creates a single top-level PR comment — equivalent to the "Add a comment" button. This is the right surface for a holistic AI review.
+A holistic review must land as ONE complete comment AND be **resolvable**, so the author can mark it done across review rounds. GitHub only makes **review comments** (Files-changed tab, anchored to a file/line) resolvable — a plain issue comment (Conversation tab, `POST /issues/{number}/comments`) has no "Resolve conversation" affordance at all.
 
-A "review" (`POST /pulls/{number}/reviews`) is per-file with line-anchored comments and a single APPROVE / REQUEST_CHANGES / COMMENT event. That requires splitting `pr-comment.md` into per-line comments, which we deliberately do NOT do (the curated holistic comment is the product).
+So `post-review-comment` uses `POST /repos/{owner}/{repo}/pulls/{number}/comments` with `subject_type=file`, `commit_id={headRefOid}`, `path={first changed file}` — one resolvable thread anchored to the first changed file, carrying the whole curated body. The script derives `commit_id` from `--pr-file` (`headRefOid`) and `path` from the first `+++ b/…` entry in `--diff-file`; pass `--commit-id` / `--path` to override.
+
+We deliberately do NOT explode the review into GitHub's per-line comment model (one thread per finding) — the curated single comment is the product; per-finding threads are exactly the review spam this tool avoids.
+
+**Fallback**: if the anchor cannot be resolved (no head commit / no changed file) or GitHub rejects the review-comment POST (e.g. the commit is not part of the PR), the script automatically falls back to a plain issue comment and reports `resolvable: false, fellBackToIssueComment: true` — posting never silently fails.
 
 ### Auth pitfall
 
 `gh` CLI handles auth via keyring. For REST fallback, `$env:GITHUB_TOKEN` is the standard env var; `gh auth token` prints the current keyring token if you need to inject it. Never paste a token into the agent context; export it in the shell.
+
+## commentCapabilities
+
+Feeds the `pr-review-assemble.mjs comment` meta (Step 8, item 5). GitHub renders GitHub-Flavored Markdown plus a safe HTML subset including `<details><summary>`, so the collapsible comment works natively.
+
+| Meta field | Value | Why |
+| --- | --- | --- |
+| `wrap` | `true` | `<details open>` (default-expanded; click to collapse) is honored — each review round posts as one collapsible block. |
+| `collapse` | omit (collapse every present section) | `<details>` renders for every section. |
+| `sizeBudget` | `60000` | A single comment / review-comment body is capped at 65536 chars; 60000 leaves headroom before the assembler drops the heavy analyses. |

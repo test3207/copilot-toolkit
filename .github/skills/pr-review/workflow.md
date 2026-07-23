@@ -31,7 +31,7 @@ Output artifacts (NOT inside `sections/`, so they don't get re-included by the c
 | File | Owner | Purpose |
 | ---- | ----- | ------- |
 | `review.md` | main agent (Step 9.1) | Concat of `sections/*.md` -- canonical local record (full subagent analysis) |
-| `pr-comment.md` | main agent (Step 8) | AI-header + **curated** section concat (TL;DR + Intent + Validation + ICM) + footer -- verbatim body posted to PR thread in Step 9.2. Raw subagent sections (20/30/40) are intentionally excluded -- every actionable finding is already in TL;DR Action Items and Validation, so including the raw sections triples the duplication. Dev who wants the full per-call-site / call-chain / smell tables reads the local `review.md`. |
+| `pr-comment.md` | main agent (Step 8) | AI-header + `## AI Code Review` title + TL;DR (always visible), then Intent / Logic / Impact / Quality / Validation / ICM as collapsed `<details>` blocks, all inside an outer `<details open>` (one togglable block per review round) -- verbatim body posted to PR thread in Step 9.2. The raw subagent analyses (20/30/40) are **folded in** (collapsed), not excluded; if the body would exceed the platform comment-size cap the assembler drops quality→impact→logic first with a pointer to the local `review.md`. |
 
 ## Rules
 
@@ -58,13 +58,13 @@ Cross-file references: subagent prompts (in `.github/agents/pr-*.md`) call out "
 
 ## Anti-Summarization Rule
 
-The PR Comment body (`pr-comment.md`) MUST be assembled by concatenating the **curated** section files (TL;DR + Intent + Validation + ICM-if-applicable) via terminal, NOT rewritten by the main agent from memory. The reference template shows the exact `Get-Content` recipe.
+The PR Comment body (`pr-comment.md`) MUST be assembled by the `pr-review-assemble.mjs comment` recipe (which pulls the section files + wraps them in the collapsible structure) via terminal, NOT rewritten by the main agent from memory. The reference template shows the exact recipe + `comment-meta.json` fields.
 
 Do NOT:
 
 - Rewrite findings from memory or conversation context
 - Condense tables in the included sections into summary counts (e.g., "3 High issues" instead of the actual 3 rows in `50-validation.md`)
-- Add or drop sections relative to the reference template -- raw subagent sections (20/30/40) are intentionally excluded; do not re-add them. ICM (`90-icm.md`) is conditional on the section file existing.
+- Hand-edit the assembler's collapsible structure -- the section set (raw subagent sections 20/30/40 are folded in as collapsed `<details>` since v3.6.0) and the outer wrapper are the assembler's job, driven by the provider's `commentCapabilities`. ICM (`90-icm.md`) is conditional on the section file existing.
 
 **Verification before Step 9.2**: `(Get-Content "pr-review/$repo/$prId/pr-comment.md").Count` is reasonable (typically ~150-300 lines for a non-trivial PR; not 5 lines because the concat silently broke). If suspiciously short, re-run the assembly.
 
