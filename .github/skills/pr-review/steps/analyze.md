@@ -83,4 +83,4 @@ Each subagent returns a compact summary message. Main agent collects the 3 summa
 2. IF none: skip to Step 8
 3. Dispatch **pr-finding-validator** with: `toolkit-root` + `repo` + `prId` from main agent (so it can locate `pr-review/{repo}/{prId}/sections/`), the Medium+ findings list (with the original URL links preserved), intent summary, `fileLinkTemplate + forbiddenAutoLinkPatterns` from Step 5, paths to `20-logic.md` / `30-impact.md` / `40-quality.md`
 4. Validator writes `50-validation.md`; returns per-finding verdicts
-5. Apply verdicts to the in-context summaries: upgrade severities where validator says so; never downgrade
+5. Apply verdicts to the in-context summaries per the validator's output -- `pr-finding-validator.md` §3 (Verdict) owns the semantics: upgrade where it upgraded; apply **refuted** downgrades where it resolved a determinable precondition (class i); keep genuinely-uncertain findings (class ii) elevated. Do NOT redefine verdict semantics in this dispatch.
