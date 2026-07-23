@@ -17,9 +17,9 @@
 //   comment --repo <name> --pr-id <id> --meta <json-file>       # provider: build curated pr-comment.md
 //   lint    --repo <name> --pr-id <id> [--patterns <json-file>] # Step 9.1b: HARD GATE before posting
 //
-// --meta json:     { "model": "...", "tool": "pr-review", "version": "v3.6.1",
+// --meta json:     { "model": "...", "tool": "pr-review", "version": "v3.6.2",
 //                    "verdict": "Approve with Comments",    // optional; else parsed from 05-tldr.md's **Verdict: ...**
-//                    "collapse": ["intent","validation","icm"], // optional; omit = collapse ALL present curated sections; [] = render flat (no <details>)
+//                    "collapse": ["intent","validation"], // optional; omit = collapse ALL present curated sections; [] = render flat (no <details>)
 //                    "wrap": true }                          // optional; outer whole-comment <details open> (one togglable block per review round); default true
 // --patterns json: [ { "pattern": "<regex>", "autoLinksTo": "...", "safeReplacement": "..." }, ... ]
 //
@@ -115,10 +115,11 @@ if (command === 'comment') {
   // the raw subagent analyses (20-logic / 30-impact / 40-quality) are deliberately NOT included -- they
   // duplicate the validated findings 2-3x and, being PRE-validation, can contradict the Finding Validation
   // verdicts (e.g. show a claim the validator later refuted). They stay in review.md for local exploration.
+  // The ICM comment (90-icm.md) is likewise NOT posted -- it stays local-only for manual copy-paste into ICM
+  // (contract: reference.md / finalize.md footer / SKILL.md). Do NOT add an 'icm' entry back to this catalog.
   const CATALOG = [
     { key: 'intent', file: '10-intent.md', label: 'Intent & Approach' },
     { key: 'validation', file: '50-validation.md', label: 'Finding Validation — per-finding verdicts + evidence' },
-    { key: 'icm', file: '90-icm.md', label: 'ICM Comment' },
   ];
   const collapseSet = Array.isArray(m.collapse) ? new Set(m.collapse) : null; // null = collapse every present section
   const wrap = m.wrap !== false; // outer whole-comment <details open>; default on

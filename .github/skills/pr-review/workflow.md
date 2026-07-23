@@ -31,7 +31,7 @@ Output artifacts (NOT inside `sections/`, so they don't get re-included by the c
 | File | Owner | Purpose |
 | ---- | ----- | ------- |
 | `review.md` | main agent (Step 9.1) | Concat of `sections/*.md` -- canonical local record (full subagent analysis) |
-| `pr-comment.md` | main agent (Step 8) | AI-header + `## AI Code Review` title + TL;DR (always visible), then Intent / Validation / ICM as collapsed `<details>` blocks, all inside an outer `<details open>` (one togglable block per review round) -- verbatim body posted to PR thread in Step 9.2. The raw subagent analyses (20/30/40) are intentionally excluded (they duplicate the validated findings and, being pre-validation, can contradict the Validation verdicts); the full detail stays in the local `review.md`. |
+| `pr-comment.md` | main agent (Step 8) | AI-header + `## AI Code Review` title + TL;DR (always visible), then Intent / Validation as collapsed `<details>` blocks, all inside an outer `<details open>` (one togglable block per review round) -- verbatim body posted to PR thread in Step 9.2. ICM (`90-icm.md`) is NOT posted -- it stays local-only in `review.md` for manual copy-paste. The raw subagent analyses (20/30/40) are intentionally excluded (they duplicate the validated findings and, being pre-validation, can contradict the Validation verdicts); the full detail stays in the local `review.md`. |
 
 ## Rules
 
@@ -64,7 +64,7 @@ Do NOT:
 
 - Rewrite findings from memory or conversation context
 - Condense tables in the included sections into summary counts (e.g., "3 High issues" instead of the actual 3 rows in `50-validation.md`)
-- Hand-edit the assembler's collapsible structure -- the curated section set (intent / validation / icm folded as collapsed `<details>`; raw sections 20/30/40 excluded) and the outer wrapper are the assembler's job, driven by the provider's `commentCapabilities`. ICM (`90-icm.md`) is conditional on the section file existing.
+- Hand-edit the assembler's collapsible structure -- the curated section set (intent / validation folded as collapsed `<details>`; raw sections 20/30/40 excluded) and the outer wrapper are the assembler's job, driven by the provider's `commentCapabilities`. ICM (`90-icm.md`) is written locally only (never posted) and stays in `review.md`.
 
 **Verification before Step 9.2**: `(Get-Content "pr-review/$repo/$prId/pr-comment.md").Count` is reasonable (typically ~150-300 lines for a non-trivial PR; not 5 lines because the concat silently broke). If suspiciously short, re-run the assembly.
 
