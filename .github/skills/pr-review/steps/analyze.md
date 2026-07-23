@@ -79,7 +79,7 @@ Each subagent returns a compact summary message. Main agent collects the 3 summa
 
 ### 7d: pr-finding-validator (conditional)
 
-1. From the 3 summaries, extract Medium+ findings (severity tag >= Medium)
+1. From the 3 summaries, extract Medium+ findings (severity tag >= Medium) (Severity dimension only — High/Medium in, Low/Nit out; Kind such as Bug does not change this threshold. See [tags.md](../tags.md).)
 2. IF none: skip to Step 8
 3. Dispatch **pr-finding-validator** with: `toolkit-root` + `repo` + `prId` from main agent (so it can locate `pr-review/{repo}/{prId}/sections/`), the Medium+ findings list (with the original URL links preserved), intent summary, `fileLinkTemplate + forbiddenAutoLinkPatterns` from Step 5, paths to `20-logic.md` / `30-impact.md` / `40-quality.md`
 4. Validator writes `50-validation.md`; returns per-finding verdicts

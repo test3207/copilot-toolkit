@@ -32,7 +32,7 @@ When NOT to use it:
 | Item | Value |
 | ---- | ----- |
 | Tool name | `pr-review` |
-| Tool version | `v3.6.3` |
+| Tool version | `v3.6.4` |
 | Working dir | `pr-review/{repo}/{prId}/sections/*.md` per-section files; `pr-review/{repo}/{prId}/review.md` is the terminal-concat artifact; the persisted diff is `pr-review/{repo}/{prId}/diff.txt`. All OUTPUT lives under `pr-review/`, which the skill self-ignores via a generated `pr-review/.gitignore` (`*`) on first run -- portable, needs no consumer root `.gitignore` or sync. The PR source branch is checked out into an isolated, SEARCHABLE worktree at `pr-review-worktree/{repo}/{prId}/worktree/` (Step 3, via `scripts/pr-review-worktree.mjs`) -- a SEPARATE, NON-ignored tree so VS Code grep / file / semantic search reach it directly. Reviews never mutate the user's working tree and reviews of different PRs run in parallel. Every git call runs against `{repoContext.path}` (`git -C`), so the reviewed repo may be the workspace root (plugin mode) or a submodule (L2 mode). |
 | Providers | [providers/ado.md](./providers/ado.md), [providers/github.md](./providers/github.md). Add a new file under `providers/` for new hosts; no workflow edits required. |
 | Subagents | `.github/agents/pr-logic-reviewer.md` (7a) · `.github/agents/pr-impact-analyzer.md` (7b) · `.github/agents/pr-quality-checker.md` (7c) · `.github/agents/pr-finding-validator.md` (7d). |
@@ -100,6 +100,7 @@ Orchestration entry point is [workflow.md](./workflow.md); it indexes three step
 - `providers/{pr-platform}.md` — read in Step 0 (resolve provider); recipes invoked in Steps 1, 2, 5, 7, 9.1b, 9.2.
 - `rules.md` — subagents read for review criteria (smell catalog, corner cases).
 - `decision.md` — main agent reads in Step 8 for verdict + Action Items gates.
+- `tags.md` — canonical Action-Item tag taxonomy; the tag allowlist is inlined into each producer's output-format section, so subagents need not load `tags.md` in full. Consumers (finalize / decision / reference / rules / anti-patterns) point to it for tag meaning, sort, and rendering.
 
 ## Todo-Driven Execution
 
@@ -138,7 +139,7 @@ When posting review comments to PR:
 
    - `<model_name>`: state your exact model name as defined in your system instructions. Do not guess.
    - `<tool_name>`: the **Tool name** value from the Quick Reference table above (currently `pr-review`). Use exactly that string.
-   - `<tool_version>`: the **Tool version** value from the Quick Reference table above (currently `v3.6.3`). Use exactly that string -- do not substitute a different version.
+   - `<tool_version>`: the **Tool version** value from the Quick Reference table above (currently `v3.6.4`). Use exactly that string -- do not substitute a different version.
 4. **Post the full assembled body** — the assembler emits the always-visible header + TL;DR + Action Items, then the collapsed `<details>` sections (Intent, Validation) inside an outer `<details open>`. Do NOT condense or rewrite from memory.
 5. **ICM Comment is NOT posted to PR** — it is saved in `sections/90-icm.md` for manual copy-paste.
 
@@ -157,5 +158,6 @@ When posting review comments to PR:
 - [reference.md](./reference.md) — section file templates, decision rules, review heuristics.
 - [rules.md](./rules.md) — review criteria, smell catalog (subagents).
 - [decision.md](./decision.md) — verdict gates + Action Items construction gates (main agent, Step 8).
+- [tags.md](./tags.md) — canonical author-facing Action-Item tag taxonomy (Severity + Kind + Confidence closed sets, ordering, axis mapping, rendering, allowlist). Subagents reach it via the inline allowlist line in their output-format section.
 - [providers/_index.md](./providers/_index.md) — provider contract spec.
 - [anti-patterns/index.md](./anti-patterns/index.md) — global detection rules and group index.

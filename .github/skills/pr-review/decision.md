@@ -33,6 +33,8 @@ THEN verdict = "Request Changes"
      blocking_issues >= 1
 ```
 
+> The author-facing tag this verdict keys off (Kind `Bug` + Severity) and its rendering are defined in [tags.md](tags.md). This file owns the verdict thresholds; tags.md owns the tag set.
+
 **Common anti-pattern (worked example):**
 
 1. Corner Case #1 correctly identified: networkHciDropdown placeholder mismatch, 3-step standard workflow, classified as Bug (potential) Medium.
