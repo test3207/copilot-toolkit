@@ -122,15 +122,25 @@ User Action: [what the user does]
 
 ### 3. Verdict
 
+**Resolvability Gate — run BEFORE assigning or retaining any Medium+ that rests on a precondition.** A finding's severity often hinges on a deciding precondition `X` (e.g. "IF the config key is unset", "IF this caller passes null"). Before you assign or keep any Medium+ on `IF X` grounds, classify `X`:
+
+- **(i) Determinable-in-repo** -- the answer is in the code / config / tests already in the worktree (e.g. "is `CONFIG_KEY` set in the shipped env blocks?" -> grep; "does this caller pass a non-null arg?" -> read). You **MUST resolve `X` now** (grep/read the worktree); severity then follows the resolved fact. You **may not** retain a Medium+ on `IF X` grounds -- resolving may legitimately drop it to Nit or **refuted**.
+- **(ii) Irreducibly uncertain** -- needs runtime-only data, external-system behavior, or product/UX intent **not present in the repo**. **Only these** keep the elevated severity, tagged `needs human/author confirmation`. This is what the keep-under-uncertainty rule below is for.
+
+Companion rules:
+- **Red-flag rule**: an `IF <a fact greppable in this repo>` clause left unresolved in your verdict = you punted; it is NOT a terminal verdict. Resolve it before writing the verdict.
+- **Static != runtime rule**: a `throw`/`reject` existing on a code path is NOT proof it fires in a shipped config. Identify the concrete runtime trigger and verify it occurs in a shipped environment before rating on it.
+
 For each finding, assign one of:
 - **confirmed** -- standard user workflow triggers the bug, impact is visible
 - **upgraded** -- subagent severity was too low; provide new severity + reason
 - **theoretical** -- only triggerable via unusual/unlikely input; keep severity but note limited impact
-- **unverifiable** -- cannot determine reachability from code alone; keep as-is
+- **refuted** -- a determinable precondition (class i) resolved against the finding: the bug cannot occur in any shipped config. Drop to Nit or remove from Action Items; state the resolving fact (what you grepped/read).
+- **unverifiable** -- irreducibly uncertain (class ii: runtime-only / external-system / product-intent, not in the repo); keep severity, tag `needs human/author confirmation`
 
 Rules:
 - Apply global detection rules from `anti-patterns/index.md`: simplest repro first, severity floor for standard workflows
-- **Never downgrade** -- only confirm, upgrade, or mark theoretical
+- **Never downgrade on unresolved GENUINE uncertainty** -- if `X` is irreducibly uncertain (class ii), keep it elevated so a human reviews it (a silently dropped real bug costs more than a false positive the human dismisses). Downgrading -- including **refuted** -- is allowed ONLY after you resolved a determinable precondition (class i); never as a shortcut around an unresolved question.
 - If the simplest repro is a standard user workflow, severity MUST be Medium+
 
 ## Section File Format
@@ -142,13 +152,13 @@ Write to `pr-review/{repo}/{prId}/sections/50-validation.md`:
 
 | # | Finding | Verdict | User Action | Impact |
 |---|---------|---------|-------------|--------|
-| 1 | {description} | confirmed/upgraded/theoretical | {action} | {what user sees} |
+| 1 | {description} | confirmed/upgraded/theoretical/refuted/unverifiable | {action} | {what user sees} |
 
 ### Validated Chains
 
 #### Finding 1: {short description}
 
-- **Verdict**: {confirmed/upgraded/theoretical/unverifiable}
+- **Verdict**: {confirmed/upgraded/theoretical/refuted/unverifiable}
 - **Severity**: {original} -> {adjusted if changed}
 - **Chain**:
   User Action: {what user does}
@@ -172,8 +182,9 @@ Per-finding verdicts (preserve original file links from the input action items u
 - F1 [Bug]: confirmed (was [Bug] [path/to/file.ts#L42](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>))
 - F2 [High]: upgraded -> [Bug] (was [High] [path/to/file.ts#L88](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>))
 - F3 [Medium]: theoretical
+- F4 [Medium]: refuted -> Nit (grepped CONFIG_KEY set in every shipped env block; the reject path is unreachable)
 
-Severity changes: F2 [High] -> [Bug]
+Severity changes: F2 [High] -> [Bug]; F4 [Medium] -> Nit
 ```
 
 **Hard rule**: no chain prose, no repro steps in the response. Those live in the section file.
