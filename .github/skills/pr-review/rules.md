@@ -6,17 +6,19 @@ Quick reference for PR review criteria, code smells, and consumer-gated rules.
 
 | Item | Rule | Action if Violated |
 | ---- | ---- | ------------------ |
-| PR Size | < 200 lines (excluding comments) | ⚠️ Recommend group/face-to-face review |
-| PR Title | Clear, concise, describes the change | ❌ Request title update |
-| PR Type | Feature / Bug Fix / Refactor / Build / Docs / Test / Other | ❌ Request type selection |
-| Single Responsibility | One PR does one thing | ❌ Request PR split |
-| Flighting | Required for new features or breaking changes | ⚠️ Remind to add flight |
+| PR Size | < 200 lines (excluding comments) | Recommend group/face-to-face review |
+| PR Title | Clear, concise, describes the change | Request title update |
+| PR Type | Feature / Bug Fix / Refactor / Build / Docs / Test / Other | Request type selection |
+| Single Responsibility | One PR does one thing | Request PR split |
+| Flighting | Required for new features or breaking changes | Remind to add flight |
 
 ---
 
 ## Code Smell Patterns
 
-### 🔴 High Severity
+> The High / Medium / Low tiers below are INTERNAL axis-1 severity levels. The author-facing Action-Item tag set (Severity + Kind + Confidence, closed set + rendering) lives in [tags.md](tags.md); align to it, do not re-list it here.
+
+### High Severity
 
 | Smell | Description | Detection |
 | ----- | ----------- | --------- |
@@ -33,7 +35,7 @@ Quick reference for PR review criteria, code smells, and consumer-gated rules.
 
 > **Behavioral anti-patterns**: Patterns marked "See BAP-xx" have full detection guides in [anti-patterns/](anti-patterns/index.md).
 
-### 🟡 Medium Severity
+### Medium Severity
 
 | Smell | Description | Detection |
 | ----- | ----------- | --------- |
@@ -42,7 +44,7 @@ Quick reference for PR review criteria, code smells, and consumer-gated rules.
 | Magic Numbers | Hardcoded values without constants | grep_search for numeric literals |
 | Props Drilling | Props passed through many levels | Check component hierarchy |
 
-### 🟢 Low Severity
+### Low Severity
 
 | Smell | Description | Detection |
 | ----- | ----------- | --------- |
@@ -56,21 +58,21 @@ Quick reference for PR review criteria, code smells, and consumer-gated rules.
 ### Null/Undefined Handling
 
 ```typescript
-// ❌ Bad
+// Bad
 const name = user.profile.name;
 
-// ✅ Good
+// Good
 const name = user?.profile?.name ?? 'Unknown';
 ```
 
 ### Array Operations
 
 ```typescript
-// ❌ Bad - may throw on empty array
+// Bad - may throw on empty array
 const first = items[0];
 const last = items[items.length - 1];
 
-// ✅ Good
+// Good
 const first = items.at(0);
 const last = items.at(-1);
 if (items.length === 0) { /* handle empty */ }
@@ -79,12 +81,12 @@ if (items.length === 0) { /* handle empty */ }
 ### Async Operations
 
 ```typescript
-// ❌ Bad - race condition, no error handling
+// Bad - race condition, no error handling
 useEffect(() => {
   fetchData().then(setData);
 }, [id]);
 
-// ✅ Good
+// Good
 useEffect(() => {
   let cancelled = false;
   fetchData()
@@ -118,10 +120,10 @@ Apply the rules in this section ONLY when the reviewed repo declares them. For a
 
 | Rule | Description | Action |
 | ---- | ----------- | ------ |
-| No console.log | Use project logging mechanisms | ❌ Remove or replace |
-| No hardcoded strings | Use resource files (ClientResources.resx or *.resjson) | ❌ Move to resources |
-| Accessibility | aria-label on interactive elements | ⚠️ Add if missing |
-| Import Order | Don't change existing import order (MerlinBot enforces) | ⚠️ Revert changes |
+| No console.log | Use project logging mechanisms | Remove or replace |
+| No hardcoded strings | Use resource files (ClientResources.resx or *.resjson) | Move to resources |
+| Accessibility | aria-label on interactive elements | Add if missing |
+| Import Order | Don't change existing import order (MerlinBot enforces) | Revert changes |
 
 ### KO / React framework boundaries
 

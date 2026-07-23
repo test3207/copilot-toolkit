@@ -25,6 +25,11 @@ const patterns = [
     regex: /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/i,
     extract: (m) => ({ type: "pr", id: m[3], owner: m[1], repoName: m[2] }),
   },
+  // GitHub Issue: https://github.com/<owner>/<repo>/issues/<id>
+  {
+    regex: /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/i,
+    extract: (m) => ({ type: "wi", id: m[3], owner: m[1], repoName: m[2] }),
+  },
   // ADO WI: https://<org>.visualstudio.com/<project>/_workitems/edit/<id>
   {
     regex: /^https?:\/\/(\w+)\.visualstudio\.com\/(?:DefaultCollection\/)?([^/]+)\/_workitems\/edit\/(\d+)/i,

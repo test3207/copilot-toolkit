@@ -23,12 +23,12 @@ Read [Global Detection Rules](index.md#global-detection-rules) before applying t
 **Example**:
 
 ```typescript
-// ❌ No disposal guard
+// Bad: No disposal guard
 fetchData().then(data => {
     this.items(data);  // observable may be disposed
 });
 
-// ✅ With disposal guard
+// Good: With disposal guard
 fetchData().then(data => {
     if (!this.isDisposed()) {
         this.items(data);
@@ -53,7 +53,7 @@ fetchData().then(data => {
 ```typescript
 enum HostType { Personal, Pooled, PooledElastic }  // PooledElastic is new
 
-// ❌ Existing switch elsewhere -- PooledElastic falls to default
+// Bad: Existing switch elsewhere -- PooledElastic falls to default
 switch (hostType) {
     case HostType.Personal: return personalConfig;
     case HostType.Pooled: return pooledConfig;

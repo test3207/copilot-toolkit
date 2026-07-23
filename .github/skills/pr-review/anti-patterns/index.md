@@ -4,6 +4,8 @@ Subtle patterns that look correct at a glance but break under specific condition
 
 ## Global Detection Rules
 
+> `**Severity**:` and `Bug (potential/confirmed)` used across these anti-pattern files are INTERNAL axis-1 (severity) and axis-2 (Kind=Bug) vocabularies; how they collapse into the author-facing Action-Item tag is defined in [../tags.md](../tags.md).
+
 These rules apply to ALL behavioral anti-pattern checks:
 
 1. **Simplest repro first**: Start from the initial/default state. Ask "Does this break on the very first render?" before analyzing state transitions.

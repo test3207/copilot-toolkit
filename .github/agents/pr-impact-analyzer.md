@@ -192,11 +192,12 @@ Return ONLY this:
 Section file: pr-review/{repo}/{prId}/sections/30-impact.md
 
 Findings (use the [File Reference URL Rule](#file-reference-url-rule) for every link):
-- [Bug] [path/to/file.ts#L42](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line}
-- [High] [path/to/file.ts#L88](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line}
+**Tag allowlist** — emit ONLY the closed set in `{toolkit-root}/skills/pr-review/tags.md`: exactly one Severity (`High`/`Medium`/`Low`/`Nit`) + optional Kind (`Bug`/`Style`/`Perf`/`Security`/`Test`/`Docs`/`A11y`) + optional Confidence (`needs-confirm`), written in that within-item order. No ad-hoc tags (`[Suggestion]`/`[warn]`/etc.).
+- [High] [Bug] [path/to/file.ts#L42](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line}
+- [Medium] [path/to/file.ts#L88](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line}
 
 Risk: Low / Medium / High
-Counts: Bug=0 High=1 Medium=2 Low=0 Nit=0
+Counts -- Severity: High=1 Medium=2 Low=0 Nit=0; Kind: Bug=0
 Verdict-relevant: {one sentence on the worst issue}
 ```
 

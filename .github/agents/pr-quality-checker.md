@@ -200,12 +200,13 @@ Return ONLY this:
 
 Section file: pr-review/{repo}/{prId}/sections/40-quality.md
 
-Smell counts: High=0 Medium=2 Low=1
+Smell counts: High=0 Medium=2 Low=1 (internal axis-1 smell-tier metric — not Action-Item tags; see tags.md)
 Completeness: ok / incomplete -- {one-line if incomplete}
 DRY: ok / consolidate -- {one-line if consolidate}
 Top findings (Medium+) (use the [File Reference URL Rule](#file-reference-url-rule) for every link):
+**Tag allowlist** — emit ONLY the closed set in `{toolkit-root}/skills/pr-review/tags.md`: exactly one Severity (`High`/`Medium`/`Low`/`Nit`) + optional Kind (`Bug`/`Style`/`Perf`/`Security`/`Test`/`Docs`/`A11y`) + optional Confidence (`needs-confirm`), written in that within-item order. No ad-hoc tags (`[Suggestion]`/`[warn]`/etc.).
 - [Medium] [path/to/file.ts#L88](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line}
-- [Medium] [other.tsx#L15](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line}
+- [Medium] [Style] [other.tsx#L15](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line}
 ```
 
 **Hard rule**: no smell-table rows in the response. The main agent reads the section file when it needs detail.

@@ -134,10 +134,10 @@ Companion rules:
 
 For each finding, assign one of:
 - **confirmed** -- standard user workflow triggers the bug, impact is visible
-- **upgraded** -- subagent severity was too low; provide new severity + reason
+- **upgraded** -- subagent severity and/or Kind was too low or missing; provide the new Severity and/or Kind (e.g. add `Bug`) + reason
 - **theoretical** -- triggerable only via unusual/unlikely *input* (input-likelihood axis); keep severity, note limited impact. NOT for config-reachability: if a class-i precondition proves the bug unreachable in every shipped config, use **refuted**, not `theoretical`.
 - **refuted** -- a determinable (class i) precondition resolved against the finding: the bug cannot occur in any shipped config (config-reachability axis). Drop to Nit or remove from Action Items; state the resolving fact (what you grepped/read).
-- **unverifiable** -- irreducibly uncertain (class ii: runtime-only / external-system / product-intent, not in the repo); keep severity. Append the literal ` (needs human/author confirmation)` after the verdict label everywhere you emit it: the section-table Verdict cell, the per-finding `Verdict:` line, and the response verdict list.
+- **unverifiable** -- irreducibly uncertain (class ii: runtime-only / external-system / product-intent, not in the repo); keep severity. Append the literal ` (needs human/author confirmation)` after the verdict label everywhere you emit it: the section-table Verdict cell, the per-finding `Verdict:` line, and the response verdict list. Author-facing effect: the Action Item gains the Confidence tag `[needs-confirm]` (keep Severity / Kind) -- see the "Validator verdict -> tag effect" table in `{toolkit-root}/skills/pr-review/tags.md`.
 
 Rules:
 - Apply global detection rules from `anti-patterns/index.md`: simplest repro first, severity floor for standard workflows
@@ -172,6 +172,8 @@ Write to `pr-review/{repo}/{prId}/sections/50-validation.md`:
 
 ## Response Message Format
 
+**Tag allowlist** — when echoing tags, emit ONLY the closed set in `{toolkit-root}/skills/pr-review/tags.md`: exactly one Severity (`High`/`Medium`/`Low`/`Nit`) + optional Kind (`Bug`/`Style`/`Perf`/`Security`/`Test`/`Docs`/`A11y`) + optional Confidence (`needs-confirm`), in that within-item order. No ad-hoc tags.
+
 Return ONLY this:
 
 ```markdown
@@ -180,13 +182,13 @@ Return ONLY this:
 Section file: pr-review/{repo}/{prId}/sections/50-validation.md
 
 Per-finding verdicts (preserve original file links from the input action items unchanged):
-- F1 [Bug]: confirmed (was [Bug] [path/to/file.ts#L42](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>))
-- F2 [High]: upgraded -> [Bug] (was [High] [path/to/file.ts#L88](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>))
+- F1 [High] [Bug]: confirmed (was [High] [Bug] [path/to/file.ts#L42](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>))
+- F2 [Medium]: upgraded -> [High] [Bug] (was [Medium] [path/to/file.ts#L88](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>))
 - F3 [Medium]: theoretical
 - F4 [Medium]: refuted -> Nit (grepped CONFIG_KEY set in every shipped env block; the reject path is unreachable)
-- F5 [Medium]: unverifiable (needs human/author confirmation) -- depends on a runtime tenant flag not in the repo
+- F5 [Medium] [needs-confirm]: unverifiable (needs human/author confirmation) -- depends on a runtime tenant flag not in the repo
 
-Severity changes: F2 [High] -> [Bug]; F4 [Medium] -> Nit
+Severity changes: F2 [Medium] -> [High] [Bug]; F4 [Medium] -> Nit
 ```
 
 **Hard rule**: no chain prose, no repro steps in the response. Those live in the section file.

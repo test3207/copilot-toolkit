@@ -12,8 +12,8 @@ The main agent operates ONLY on the compact summaries returned by 7a-7d. Do NOT 
    - Never derive verdict from overall regression risk -- derive it from the highest-severity individual finding
 2. **Build Action Items** locally from the summaries:
    - Apply Action Items Construction gates (G1-G4) in [decision.md](../decision.md#action-items-construction-anti-padding-rule) to every candidate item; drop items that fail
-   - Sort by severity: Bug > High > Medium > Low > Nit
-   - Each item: checkbox + severity tag + **absolute PR file URL link** + one-line description.
+   - Sort per [tags.md](../tags.md#sort-order-between-action-items): primary = Severity high→low (High > Medium > Low > Nit); secondary = within the same severity, Bug-kind first.
+   - Each item: checkbox + tags in Severity → Kind → Confidence order (closed set + rendering in [tags.md](../tags.md)) + **absolute PR file URL link** + one-line description.
    - File-reference link format (MANDATORY -- never emit relative paths like `[file.ts](repos/...)`):
      `[<repo-relative path>#L<startLine>(-L<endLine>)](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>)`
      The subagent summaries already returned links in this format -- copy them verbatim into the Action Items. Do NOT construct URLs yourself; the template comes from the provider file (see `providers/{pr-platform}.md`).

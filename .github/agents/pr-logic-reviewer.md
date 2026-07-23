@@ -198,12 +198,12 @@ Return ONLY this to the main agent:
 Section file: pr-review/{repo}/{prId}/sections/20-logic.md
 
 Findings (severity | file link | one-line) -- use the [File Reference URL Rule](#file-reference-url-rule) for every link:
-- [Bug] [path/to/file.ts#L42](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line description}
-- [High] [path/to/file.ts#L88-L95](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line description}
-- [Medium] [other.tsx#L15](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line description}
-- [Nit] [x.ts#L5](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line description}
+**Tag allowlist** — emit ONLY the closed set in `{toolkit-root}/skills/pr-review/tags.md`: exactly one Severity (`High`/`Medium`/`Low`/`Nit`) + optional Kind (`Bug`/`Style`/`Perf`/`Security`/`Test`/`Docs`/`A11y`) + optional Confidence (`needs-confirm`), written in that within-item order. No ad-hoc tags (`[Suggestion]`/`[warn]`/etc.).
+- [High] [Bug] [path/to/file.ts#L42](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line description}
+- [Medium] [other.tsx#L15-L20](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line description}
+- [Nit] [Style] [x.ts#L5](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line description}
 
-Counts: Bug=1 High=1 Medium=1 Low=0 Nit=1
+Counts -- Severity: High=1 Medium=1 Low=0 Nit=1; Kind: Bug=1
 Verdict-relevant: {one sentence on the worst issue, e.g., "Bug at file.ts:42 has a standard-workflow repro"}
 ```
 
