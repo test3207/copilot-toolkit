@@ -155,5 +155,4 @@ Feeds the `pr-review-assemble.mjs comment` meta (Step 8, item 5). GitHub renders
 | Meta field | Value | Why |
 | --- | --- | --- |
 | `wrap` | `true` | `<details open>` (default-expanded; click to collapse) is honored — each review round posts as one collapsible block. |
-| `collapse` | omit (collapse every present section) | `<details>` renders for every section. |
-| `sizeBudget` | `60000` | A single comment / review-comment body is capped at 65536 chars; 60000 leaves headroom before the assembler drops the heavy analyses. |
+| `collapse` | omit (collapse every present curated section) | `<details>` renders for every section. |

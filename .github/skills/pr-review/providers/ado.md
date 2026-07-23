@@ -156,5 +156,4 @@ Feeds the `pr-review-assemble.mjs comment` meta (Step 8, item 5). ADO PR comment
 | Meta field | Value | Why |
 | --- | --- | --- |
 | `wrap` | `true` | Outer whole-comment `<details open>` keeps multi-round review threads compact (one collapsible block per round). **Caveat**: Azure DevOps Services honors the `open` attribute (default-expanded); some older self-hosted ADO Server versions strip it, so the outer block renders default-COLLAPSED there — still fully functional, just initially closed. If your ADO Server does this and you want default-expanded, set `wrap: false`. |
-| `collapse` | omit (collapse every present section) | `<details>` renders in ADO PR comments. On an ADO Server that does not render `<details>` at all, set `collapse: []` to emit a flat comment. |
-| `sizeBudget` | `140000` | ADO PR-comment content is capped at ~150000 chars; 140000 leaves headroom. |
+| `collapse` | omit (collapse every present curated section) | `<details>` renders in ADO PR comments. On an ADO Server that does not render `<details>` at all, set `collapse: []` to emit a flat comment. |
