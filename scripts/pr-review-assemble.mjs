@@ -17,11 +17,10 @@
 //   comment --repo <name> --pr-id <id> --meta <json-file>       # provider: build curated pr-comment.md
 //   lint    --repo <name> --pr-id <id> [--patterns <json-file>] # Step 9.1b: HARD GATE before posting
 //
-// --meta json:     { "model": "...", "tool": "pr-review", "version": "v3.6.0",
+// --meta json:     { "model": "...", "tool": "pr-review", "version": "v3.6.1",
 //                    "verdict": "Approve with Comments",    // optional; else parsed from 05-tldr.md's **Verdict: ...**
-//                    "collapse": ["intent","logic","impact","quality","validation","icm"], // optional; omit = collapse ALL present; [] = render flat (no <details>)
-//                    "wrap": true,                           // optional; outer whole-comment <details open> (one togglable block per review round); default true
-//                    "sizeBudget": 60000 }                   // optional; platform comment-size cap (GitHub hard limit 65536); default 60000
+//                    "collapse": ["intent","validation","icm"], // optional; omit = collapse ALL present curated sections; [] = render flat (no <details>)
+//                    "wrap": true }                          // optional; outer whole-comment <details open> (one togglable block per review round); default true
 // --patterns json: [ { "pattern": "<regex>", "autoLinksTo": "...", "safeReplacement": "..." }, ... ]
 //
 // stdout = one JSON object. Exit: 0 = ok; 1 = usage/precondition error; 3 = lint found violations (STOP).
@@ -111,21 +110,18 @@ if (command === 'comment') {
   const tldr = readTrim(join(sectionsDir, '05-tldr.md'));
   const footer = '---\n_[AI-generated review - please verify before acting]_';
 
-  // Collapsible section catalog (render order). Each present section is wrapped in a <details> block so the
-  // posted comment stays scannable across multiple review rounds; the raw subagent analyses (logic/impact/
-  // quality) are FOLDED back in (excluded verbatim before v3.6.0) rather than dropped, giving readers the
-  // full detail on demand without a wall of text by default.
+  // Curated collapsible catalog (render order). Each present section is folded into a <details> block so the
+  // posted comment stays scannable across multiple review rounds. Only the CURATED sections go in the comment:
+  // the raw subagent analyses (20-logic / 30-impact / 40-quality) are deliberately NOT included -- they
+  // duplicate the validated findings 2-3x and, being PRE-validation, can contradict the Finding Validation
+  // verdicts (e.g. show a claim the validator later refuted). They stay in review.md for local exploration.
   const CATALOG = [
     { key: 'intent', file: '10-intent.md', label: 'Intent & Approach' },
-    { key: 'logic', file: '20-logic.md', label: 'Logic Review — logic, approach, corner cases, tests' },
-    { key: 'impact', file: '30-impact.md', label: 'Impact & Regression — call chain, regression risk' },
-    { key: 'quality', file: '40-quality.md', label: 'Code Quality — similar code, smells' },
     { key: 'validation', file: '50-validation.md', label: 'Finding Validation — per-finding verdicts + evidence' },
     { key: 'icm', file: '90-icm.md', label: 'ICM Comment' },
   ];
   const collapseSet = Array.isArray(m.collapse) ? new Set(m.collapse) : null; // null = collapse every present section
   const wrap = m.wrap !== false; // outer whole-comment <details open>; default on
-  const budget = Number.isFinite(m.sizeBudget) ? m.sizeBudget : 60000; // GitHub hard limit is 65536 chars
   const verdict = m.verdict || parseVerdict(tldr); // outer summary suffix
 
   // ADO renders <details> only with a blank line after </summary> AND after </details>; GitHub tolerates it.
@@ -137,7 +133,7 @@ if (command === 'comment') {
     return body.replace(/^##\s+.*\r?\n\r?\n?/, '');
   }
 
-  // Build the section blocks in catalog order; track which are droppable under size pressure.
+  // Build the collapsed section blocks in catalog order.
   const blocks = [];
   for (const s of CATALOG) {
     const p = join(sectionsDir, s.file);
@@ -148,38 +144,17 @@ if (command === 'comment') {
     blocks.push({ key: s.key, text: doCollapse ? collapsible(s.label, stripLeadHeading(raw)) : raw });
   }
 
-  function assemble(activeBlocks, note) {
-    const inner = [header, tldr, ...activeBlocks.map((b) => b.text)];
-    if (note) inner.push(note);
-    inner.push(footer);
-    const bodyStr = inner.filter((p) => p !== '').join('\n\n');
-    if (!wrap) return bodyStr + '\n';
-    // Inline <summary> label (not a block <h2>) so the disclosure triangle hugs the text; the formal
-    // `## AI Code Review` heading is kept inside as body content.
-    const summary = `<summary><strong>AI Code Review${verdict ? ` &mdash; ${escapeHtml(verdict)}` : ''}</strong></summary>`;
-    return `<details open>\n${summary}\n\n${bodyStr}\n\n</details>\n`;
-  }
-
-  // Size budget: if the assembled comment exceeds the platform cap, drop the heavy raw analyses first
-  // (quality -> impact -> logic), replacing them with a one-line pointer to the local review.md. The
-  // curated sections (tldr / intent / validation / icm) always stay.
-  const DROP_ORDER = ['quality', 'impact', 'logic'];
-  const active = blocks.slice();
-  const dropped = [];
-  let out = assemble(active, null);
-  for (const k of DROP_ORDER) {
-    if (out.length <= budget) break;
-    const idx = active.findIndex((b) => b.key === k);
-    if (idx === -1) continue;
-    active.splice(idx, 1);
-    dropped.push(k);
-    const note = `> _${dropped.join(', ')} ${dropped.length === 1 ? 'analysis' : 'analyses'} omitted to fit the comment size limit &mdash; read \`pr-review/${repo}/${prId}/review.md\` locally for the full detail._`;
-    out = assemble(active, note);
-  }
+  const inner = [header, tldr, ...blocks.map((b) => b.text), footer].filter((p) => p !== '');
+  const bodyStr = inner.join('\n\n');
+  // Wrap the whole comment in an outer <details open> (default-expanded; click the inline summary to collapse
+  // the entire round). The formal `## AI Code Review` heading is kept inside as body content.
+  const out = wrap
+    ? `<details open>\n<summary><strong>AI Code Review${verdict ? ` &mdash; ${escapeHtml(verdict)}` : ''}</strong></summary>\n\n${bodyStr}\n\n</details>\n`
+    : bodyStr + '\n';
 
   const commentFile = join(base, 'pr-comment.md');
   writeFileSync(commentFile, out);
-  console.log(JSON.stringify({ commentFile, bytes: out.length, wrapped: wrap, collapsed: blocks.map((b) => b.key), dropped }));
+  console.log(JSON.stringify({ commentFile, bytes: out.length, wrapped: wrap, collapsed: blocks.map((b) => b.key) }));
   process.exit(0);
 }
 
