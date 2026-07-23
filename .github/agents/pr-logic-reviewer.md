@@ -203,7 +203,7 @@ Findings (severity | file link | one-line) -- use the [File Reference URL Rule](
 - [Medium] [other.tsx#L15-L20](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line description}
 - [Nit] [Style] [x.ts#L5](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line description}
 
-Counts: Bug=1 High=1 Medium=1 Low=0 Nit=1
+Counts -- Severity: High=1 Medium=1 Low=0 Nit=1; Kind: Bug=1
 Verdict-relevant: {one sentence on the worst issue, e.g., "Bug at file.ts:42 has a standard-workflow repro"}
 ```
 

@@ -134,7 +134,7 @@ Companion rules:
 
 For each finding, assign one of:
 - **confirmed** -- standard user workflow triggers the bug, impact is visible
-- **upgraded** -- subagent severity was too low; provide new severity + reason
+- **upgraded** -- subagent severity and/or Kind was too low or missing; provide the new Severity and/or Kind (e.g. add `Bug`) + reason
 - **theoretical** -- triggerable only via unusual/unlikely *input* (input-likelihood axis); keep severity, note limited impact. NOT for config-reachability: if a class-i precondition proves the bug unreachable in every shipped config, use **refuted**, not `theoretical`.
 - **refuted** -- a determinable (class i) precondition resolved against the finding: the bug cannot occur in any shipped config (config-reachability axis). Drop to Nit or remove from Action Items; state the resolving fact (what you grepped/read).
 - **unverifiable** -- irreducibly uncertain (class ii: runtime-only / external-system / product-intent, not in the repo); keep severity. Append the literal ` (needs human/author confirmation)` after the verdict label everywhere you emit it: the section-table Verdict cell, the per-finding `Verdict:` line, and the response verdict list. Author-facing effect: the Action Item gains the Confidence tag `[needs-confirm]` (keep Severity / Kind) -- see the "Validator verdict -> tag effect" table in `{toolkit-root}/skills/pr-review/tags.md`.

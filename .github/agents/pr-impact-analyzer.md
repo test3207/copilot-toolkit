@@ -197,7 +197,7 @@ Findings (use the [File Reference URL Rule](#file-reference-url-rule) for every 
 - [Medium] [path/to/file.ts#L88](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>) -- {one-line}
 
 Risk: Low / Medium / High
-Counts: Bug=0 High=1 Medium=2 Low=0 Nit=0
+Counts -- Severity: High=1 Medium=2 Low=0 Nit=0; Kind: Bug=0
 Verdict-relevant: {one sentence on the worst issue}
 ```
 

@@ -16,7 +16,7 @@ output-format section and point here for meaning.
 | --------- | --------- | ----- | -------------------- |
 | **Severity** | required | exactly 1 | `High` > `Medium` > `Low` > `Nit` |
 | **Kind** | optional | 0..N (usually 1) | `Bug` · `Style` · `Perf` · `Security` · `Test` · `Docs` · `A11y` |
-| **Confidence** | optional | 0..N | `needs-confirm` |
+| **Confidence** | optional | 0..1 | `needs-confirm` |
 
 No tag outside these three sets may appear on an author-facing Action Item.
 `[Suggestion]`, `[warn]`, `[Question]`, or any ad-hoc bracket tag are FORBIDDEN.
@@ -112,7 +112,9 @@ Otherwise the finding is non-blocking (Approve / Approve with Comments per
   inside `sections/20-logic.md` etc. They render in `review.md` but are NEVER
   Action-Item tags.
 - Per-subagent `Counts:` / `Smell counts:` lines are INTERNAL informational
-  metrics, not author-facing tags; they may use axis-1 tiers only.
+  metrics, not author-facing tags. Report them per dimension (Severity tiers,
+  and any Kind counts separately) -- never merge a Kind (e.g. `Bug`) into the
+  Severity tier list.
 
 ## Allowlist (hard rule)
 
