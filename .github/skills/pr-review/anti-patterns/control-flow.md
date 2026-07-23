@@ -41,10 +41,10 @@ Read [Global Detection Rules](index.md#global-detection-rules) before applying t
 **Example**:
 
 ```typescript
-// ❌ Early return skips ALL side effects
+// Bad: Early return skips ALL side effects
 if (disabled) { return; }  // placeholder never set
 
-// ✅ Preserves needed side effects before returning
+// Good: Preserves needed side effects before returning
 if (disabled) {
     control.placeholder(options.emptyPlaceholder);
     control.items([]);

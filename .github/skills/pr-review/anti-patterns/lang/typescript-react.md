@@ -21,7 +21,7 @@ The Knockout reactivity patterns (BAP-06/10/11) trigger only on `ko.computed` / 
 **Example**:
 
 ```typescript
-// ❌ If isAdvanced() is false on first eval, advancedSetting() is never tracked
+// Bad: If isAdvanced() is false on first eval, advancedSetting() is never tracked
 const result = ko.pureComputed(() => {
     if (isAdvanced()) {
         return advancedSetting();  // dependency NOT registered when branch skipped
@@ -29,7 +29,7 @@ const result = ko.pureComputed(() => {
     return defaultValue;
 });
 
-// ✅ Read observable unconditionally, then branch on the value
+// Good: Read observable unconditionally, then branch on the value
 const result = ko.pureComputed(() => {
     const advanced = advancedSetting();  // always tracked
     return isAdvanced() ? advanced : defaultValue;
@@ -51,11 +51,11 @@ const result = ko.pureComputed(() => {
 **Example**:
 
 ```typescript
-// ❌ B reads poolType before A sets it
+// Bad: B reads poolType before A sets it
 this.hostPool.subscribe(B_handler);  // reads this.poolType()
 this.hostPool.subscribe(A_handler);  // sets this.poolType()
 
-// ✅ A fires first, B reads updated value
+// Good: A fires first, B reads updated value
 this.hostPool.subscribe(A_handler);  // sets this.poolType()
 this.hostPool.subscribe(B_handler);  // reads this.poolType()
 ```
@@ -78,14 +78,14 @@ this.hostPool.subscribe(B_handler);  // reads this.poolType()
 **Example**:
 
 ```typescript
-// ❌ Side effect may never fire if nobody reads this computed
+// Bad: Side effect may never fire if nobody reads this computed
 this.fullName = ko.pureComputed(() => {
     const name = this.firstName() + ' ' + this.lastName();
     this.analytics.track('name-computed');  // side effect -- may not run!
     return name;
 });
 
-// ✅ Use ko.computed for bodies with side effects
+// Good: Use ko.computed for bodies with side effects
 this.fullName = ko.computed(() => {
     const name = this.firstName() + ' ' + this.lastName();
     this.analytics.track('name-computed');  // always fires

@@ -38,7 +38,7 @@ IF repo has `frameworks: [knockout, react]`:
 
 ```tsx
 // Don't expose accessibility props in interface
-// ✅ Handle internally
+// Good: Handle internally
 const MyComponent = ({ label }: IProps) => {
   return <div aria-label="Placeholder">{label}</div>;
 };
