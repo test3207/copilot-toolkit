@@ -29,24 +29,13 @@ All ownership / review / CI / observability fields are `TODO`.
 
 ## parseRepoUrl
 
-Extract the longest reasonable identity from the URL:
+Extract the identity from the URL with the tested parser (handles SSH `git@host:group/repo` and HTTPS forms; `cloneUrl` is echoed back verbatim):
 
-```pwsh
-$url = '<user input>'
-if ($url -match '^([\w.-]+)@([\w.-]+):(.+?)(?:\.git)?\/?$') {
-    # SSH form: git@host:owner/repo
-    $host = $matches[2]
-    $path = $matches[3]
-} elseif ($url -match '^https?:\/\/([^/]+)\/(.+?)(?:\.git)?\/?$') {
-    $host = $matches[1]
-    $path = $matches[2]
-}
-$parts = $path -split '/'
-$repoName = $parts[-1]
-$org = if ($parts.Count -ge 2) { ($parts[0..($parts.Count - 2)] -join '/') } else { '' }
+```text
+node .copilot-toolkit/scripts/parse-git-remote.mjs "<user input>"
 ```
 
-Emit:
+It emits `host`, `org`, `repoName`, and `cloneUrl`; `project` is always `""` for generic hosts:
 
 ```jsonc
 {
@@ -62,10 +51,11 @@ Emit:
 
 The only platform-side data needed is the default branch. Probe via `git ls-remote` (no auth assumed beyond the user's existing git credentials):
 
-```pwsh
-$head = git --no-pager ls-remote --symref '<cloneUrl>' HEAD | Select-String '^ref:' | ForEach-Object { ($_ -replace 'ref:\s+refs/heads/(\S+).*', '$1') }
-# Fallback if symref unavailable: ask the user.
+```text
+git --no-pager ls-remote --symref <cloneUrl> HEAD
 ```
+
+Read the default branch from the leading `ref: refs/heads/<branch>` line. If `--symref` is unsupported (older git) or the call needs auth, ask the user.
 
 Return:
 

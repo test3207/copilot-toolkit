@@ -62,18 +62,13 @@ Return values used by the registry entry:
 | `repo-guid` | `id` (the GUID) |
 | `defaultBranch` | `defaultBranch` → strip `refs/heads/` |
 
-Fallback (REST when MCP unavailable):
+Fallback (REST when MCP unavailable) — the tested helper wraps the `az` token + REST call:
 
-```pwsh
-$org = '<org>'
-$project = '<project>'
-$repo = '<repoName>'
-$adoResourceGuid = '499b84ac-1321-427f-aa17-267ca6975798'  # public ADO; override for sovereign clouds
-$token = (az account get-access-token --resource $adoResourceGuid --query accessToken -o tsv)
-Invoke-RestMethod `
-  -Uri "https://$org.visualstudio.com/$project/_apis/git/repositories/$repo?api-version=7.1" `
-  -Headers @{ Authorization = "Bearer $token" }
+```text
+node .copilot-toolkit/scripts/ado-rest.mjs get-repo --org <org> --project <project> --repo-name <repoName>
 ```
+
+Prints `{ id, name, defaultBranch }` (`id` = the `repo-guid`). For sovereign clouds add `--resource-guid <ado-resource-guid>`.
 
 ## resolveOwnership
 

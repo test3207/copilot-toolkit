@@ -53,18 +53,13 @@ Run the **parseRepoUrl** recipe. Produce the standard `repoInput` object (`host`
 
 ### 2. Add submodule (generic)
 
-```pwsh
-$repoName = '<repoInput.repoName>'
-$cloneUrl = '<repoInput.cloneUrl>'
-git submodule add --name $repoName $cloneUrl "repos/$repoName"
-git config -f .gitmodules "submodule.$repoName.ignore" all
+Ask the user for the working branch (`develop`, `main`, or other) first, then run the deterministic git glue in one call (adds the submodule under `repos/<repoName>`, sets `ignore = all`, and pins the branch):
+
+```text
+node .copilot-toolkit/scripts/add-submodule.mjs --name <repoInput.repoName> --clone-url <repoInput.cloneUrl> --branch <branch>
 ```
 
-Ask the user for the working branch (`develop`, `main`, or other) and pin it:
-
-```pwsh
-git config -f .gitmodules "submodule.$repoName.branch" '<branch>'
-```
+Prints `{ name, path, cloneUrl, branch }`.
 
 ### 3. Get repo metadata (provider)
 

@@ -7,11 +7,12 @@ can be deleted if they don't apply.
 
 This file is loaded into every chat as system instructions, so keep it terse.
 
-Drift gate: the toolkit ships `scripts/lint-public.ps1` which scans for host markers
-(internal org names, GUIDs, internal PR refs). Keep your consumer copy as-is - lint
-is intended for upstream-side use, not consumer-side. Your consumer is the right
-place for your real ADO org / tenant / GUIDs. Do NOT paste this template's
-filled-in version back upstream.
+Drift gate: the toolkit ships `scripts/lint-public.ps1` (scans for host markers -
+internal org names, GUIDs, internal PR refs) and `scripts/lint-recipes.mjs` (flags
+multi-step inline `pwsh`/`bash` blocks in skill/prompt recipes - the "recipe glue =
+Node script" rule). Keep your consumer copy as-is - lint is intended for upstream-side
+use, not consumer-side. Your consumer is the right place for your real ADO org /
+tenant / GUIDs. Do NOT paste this template's filled-in version back upstream.
 -->
 
 # Copilot Instructions
@@ -188,6 +189,10 @@ fully consumer-private. Example:
 Shared helper directories hold **reusable parameterized scripts only**. Before
 adding any new file:
 
+- **Prefer Node for new helpers** -- a committed helper defaults to a `.mjs` run via
+  `node` (the runtime preflight guarantees). Reach for PowerShell/bash only when it must
+  run before Node exists (install / bootstrap) or needs a shell-native capability Node
+  can't reasonably do -- and say why in the header.
 - **Banned filename patterns**: `<name>-<YYYY-MM>.ps1`, `<name>-v2.ps1`,
   `<name>-new.ps1`, `backfill-<id>.ps1`. If the work is one-shot, do it inline or
   write to `metrics/<tool>/<scope>/scratch/` -- do NOT land it as a permanent helper.
@@ -196,7 +201,7 @@ adding any new file:
 - **Read the dir's README first**. If a similar script exists, extend it (add a
   `-Switch` / new param). Don't fork.
 - **LLM judgment stays in markdown; deterministic glue can be a script.** Subagent
-  prompts own the fuzzy reasoning ("did the reviewer accept this refusal?"); `.ps1`
+  prompts own the fuzzy reasoning ("did the reviewer accept this refusal?"); script
   helpers own the deterministic glue (counting replies after a timestamp, merging
   JSON by index, parsing checkbox state). Moving glue out of the agent context
   window is a feature -- not a duplicate truth.

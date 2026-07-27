@@ -43,43 +43,24 @@ Apply the `URL detection` regex; emit:
 
 ## getRepoMetadata
 
-Primary path (`gh` CLI — must be authenticated; if not, instruct user to run `gh auth login` first):
+The tested helper prefers the authenticated `gh` CLI and falls back to REST + `GITHUB_TOKEN` when `gh` is unavailable (for GHES pass `--host <host>`):
 
-```pwsh
-$owner = '<owner>'
-$repo = '<repoName>'
-$host = '<github.com or GHES host>'
-$repoFlag = if ($host -eq 'github.com') { "$owner/$repo" } else { "$host/$owner/$repo" }
-gh repo view $repoFlag --json id,defaultBranchRef,isPrivate,visibility
+```text
+node .copilot-toolkit/scripts/github-rest.mjs get-repo --owner <owner> --repo <repoName> [--host <github.com or GHES host>]
 ```
 
 Return values used by the registry entry:
 
-| Standard field | GitHub source (gh JSON) |
+| Standard field | helper JSON |
 | --- | --- |
-| `defaultBranch` | `defaultBranchRef.name` |
-| `repoNodeId` | `id` (GraphQL node ID; informational, not required by tools) |
-
-Fallback (REST when `gh` is unavailable):
-
-```pwsh
-$token = $env:GITHUB_TOKEN  # or `gh auth token`
-$apiBase = if ($host -eq 'github.com') { 'https://api.github.com' } else { "https://$host/api/v3" }
-Invoke-RestMethod -Uri "$apiBase/repos/$owner/$repo" `
-  -Headers @{ Authorization = "Bearer $token"; Accept = 'application/vnd.github+json' }
-```
+| `defaultBranch` | `defaultBranch` |
+| `repoNodeId` | `repoNodeId` (GraphQL node ID; informational, not required by tools) |
 
 ## resolveOwnership
 
 GitHub has no `area-path` equivalent. The closest analogue is `CODEOWNERS`.
 
-After the submodule is added (orchestrator Step 2), probe for a CODEOWNERS file in the standard locations:
-
-```pwsh
-$repoPath = 'repos/<repoName>'
-$candidates = @('.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS')
-$found = $candidates | Where-Object { Test-Path (Join-Path $repoPath $_) } | Select-Object -First 1
-```
+After the submodule is added (orchestrator Step 2), probe for a CODEOWNERS file in the standard locations — check `repos/<repoName>/.github/CODEOWNERS`, then `repos/<repoName>/CODEOWNERS`, then `repos/<repoName>/docs/CODEOWNERS`; the first that exists wins (use your file tools — no shell needed).
 
 Return:
 

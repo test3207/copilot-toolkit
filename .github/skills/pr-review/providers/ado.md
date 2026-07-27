@@ -139,6 +139,7 @@ Fallback / `rest` transport (ctx-isolated — the body never enters main-agent c
 
 ADO REST calls require the Azure AD tenant that the target org's subscription lives in. Before the REST call:
 
+<!-- lint-recipes: allow single-command az tenant guard kept inline by design (issue #5 scope note) -->
 ```pwsh
 $expectedTenant = '<tenant-guid-for-this-org>'   # carry on the registry entry as `ado-tenant-id`
 $currentTenant = (az account show --query tenantId -o tsv)
