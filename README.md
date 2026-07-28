@@ -38,7 +38,14 @@ host-specific identifiers that snuck in:
 pwsh -File scripts/lint-public.ps1 -Path .github,scripts,templates,install,INSTALL.md,README.md
 ```
 
-Exit `0` = clean. Any output = leak that must be sanitized before pushing.
+```pwsh
+node scripts/lint-recipes.mjs
+```
+
+Run both as separate commands (so neither exit code masks the other); each must exit `0`.
+`lint-public.ps1` output = a host-marker leak to sanitize; `lint-recipes.mjs` output = a
+multi-step inline `pwsh`/`bash` block in a `.github/skills` / `.github/prompts` recipe that
+must move to a `scripts/<name>.mjs` (tool-dev's "recipe glue = Node script" rule).
 The `-Exclude` switch exists for documented exceptions only -- never use it to
 silence a real leak.
 
@@ -108,7 +115,8 @@ PRs welcome. Every PR that touches `.github/skills/`, `.github/agents/`,
 `scripts/`, `install/`, or any root markdown must:
 
 1. Pass `pwsh -File scripts/lint-public.ps1 -Path .github,scripts,templates,install,INSTALL.md,README.md`
-   with exit `0` and no `-Exclude` flag.
+   (exit `0`, no `-Exclude`) AND `node scripts/lint-recipes.mjs` (exit `0`) — the latter
+   fails on multi-step inline `pwsh`/`bash` in skill/prompt recipes ("recipe glue = Node script" rule).
 2. Keep documentation generic (placeholder org / repo / tenant names).
 3. Update the relevant `SKILL.md` if behavior changes.
 

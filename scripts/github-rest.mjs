@@ -6,9 +6,11 @@
 // `gh` is unavailable. One fixed code path instead of improvising each call.
 //
 // Usage:
-//   node github-rest.mjs <op> --owner <o> --repo <r> [--host github.com] --pr-id <id> [opts]
+//   node github-rest.mjs <op> --owner <o> --repo <r> [--host github.com] [--pr-id <id>] [opts]
+//   (--pr-id is required by the PR ops below, but NOT by get-repo)
 //
 //   ops:
+//     get-repo           -> {defaultBranch, repoNodeId, isPrivate, visibility}  (onboard-repo metadata)
 //     get-pr             -> --out (default raw-pr.json)   PR object (selected fields)
 //     get-threads        -> --out (default raw-threads.json)  { issueComments, reviewComments }
 //     get-diff           -> --out (default diff.txt)      unified PR patch (text)
@@ -90,7 +92,7 @@ function firstChangedFile(diffText) { const m = /^\+\+\+ b\/(.+)$/m.exec(diffTex
 
 async function main() {
   const { op, opts } = parseArgs(process.argv.slice(2));
-  if (!op || op === 'help' || opts.help) fail(op ? 0 : 2, 'ops: get-pr | get-threads | get-diff | post-comment | post-review-comment (see header for args)');
+  if (!op || op === 'help' || opts.help) fail(op ? 0 : 2, 'ops: get-repo | get-pr | get-threads | get-diff | post-comment | post-review-comment (see header for args)');
 
   const owner = opts.owner;
   const repo = opts.repo;
@@ -114,6 +116,38 @@ async function main() {
   };
 
   switch (op) {
+    case 'get-repo': {
+      let defaultBranch;
+      let repoNodeId;
+      let isPrivate;
+      let visibility;
+      // Host-aware gh availability: repo metadata for a GHES host must not hinge on
+      // github.com auth (nor vice-versa). Prefer gh only when it is authed for THIS
+      // host; on any gh failure fall back to REST + GITHUB_TOKEN.
+      let viaGh = false;
+      try { tryExec(`gh auth status --hostname ${host}`, { timeout: 15000 }); viaGh = true; } catch { viaGh = false; }
+      if (viaGh) {
+        try {
+          const r = JSON.parse(tryExec(`gh repo view ${repoFlag} --json id,defaultBranchRef,isPrivate,visibility`));
+          defaultBranch = r.defaultBranchRef && r.defaultBranchRef.name;
+          repoNodeId = r.id;
+          isPrivate = r.isPrivate;
+          visibility = r.visibility;
+        } catch {
+          // gh authed for this host but the call still failed -> fall back to REST.
+          viaGh = false;
+        }
+      }
+      if (!viaGh) {
+        const r = await ghFetch(`${apiBase(host)}/repos/${owner}/${repo}`);
+        defaultBranch = r.default_branch;
+        repoNodeId = r.node_id;
+        isPrivate = r.private;
+        visibility = r.visibility;
+      }
+      output({ defaultBranch, repoNodeId, isPrivate, visibility }, opts.out);
+      return;
+    }
     case 'get-pr': {
       if (!prId) fail(2, 'get-pr needs --pr-id');
       let pr;
@@ -188,7 +222,7 @@ async function main() {
       return;
     }
     default:
-      fail(2, `unknown op "${op}". One of: get-pr | get-threads | get-diff | post-comment | post-review-comment`);
+      fail(2, `unknown op "${op}". One of: get-repo | get-pr | get-threads | get-diff | post-comment | post-review-comment`);
   }
 }
 
