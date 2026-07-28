@@ -39,7 +39,7 @@ Output artifacts (NOT inside `sections/`, so they don't get re-included by the c
 2. **Section files are the canonical record** - Each step writes to its own section file. The final `review.md` is a concat artifact, regenerated from sections any time.
 3. **Never replace full PR description** - Only add/modify specific sections when explicitly requested.
 4. **No main-agent reads of `chat-session-resources/*/content.json`** - If you find yourself about to read one, STOP: it's a subagent response blob. The new contract returns small summaries; if you see a blob, the subagent violated its output contract -- log and proceed with the summary it returned, do not read the blob.
-5. **Terminal discipline (runtime, per shared Terminal Safety)** - any ad-hoc probe or throwaway script run during a review obeys the shared Terminal Safety rule: never type a multi-line `pwsh`/`bash`/`node -e` blob at the terminal (it hangs on bracketed-paste `[200~`, bash `!` history expansion, or Git-Bash `/`-path mangling) -- write a `.mjs` to `tmp/` and run `node tmp/x.mjs`. Single commands (`git --no-pager ...`, `node scripts/*.mjs ...`) stay inline.
+5. **Terminal discipline (runtime)** - ad-hoc probes and throwaway scripts the main agent or any subagent runs during a review follow the shared **Terminal Safety** rule (the `## Terminal Safety` section of the consumer's `copilot-instructions.md`): no inline multi-line shell/node -- write a `.mjs` to `tmp/` and run it. The failure-mode rationale lives there, not here.
 
 ---
 
