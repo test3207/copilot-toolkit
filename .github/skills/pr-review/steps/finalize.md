@@ -11,13 +11,13 @@ The main agent operates ONLY on the compact summaries returned by 7a-7d. Do NOT 
    - If ANY finding is Bug at Medium+ with a standard-workflow repro: verdict = "Request Changes", blocking_issues >= 1
    - Never derive verdict from overall regression risk -- derive it from the highest-severity individual finding
 2. **Build Action Items** locally from the summaries:
-   - Apply Action Items Construction gates (G1-G4) in [decision.md](../decision.md#action-items-construction-anti-padding-rule) to every candidate item; drop items that fail
+   - Apply Action Items Construction gates (G1-G4) in [decision.md](../decision.md#action-items-construction-gates) to every candidate item; drop items that fail
    - Sort per [tags.md](../tags.md#sort-order-between-action-items): primary = Severity high→low (High > Medium > Low > Nit); secondary = within the same severity, Bug-kind first.
    - Each item: checkbox + tags in Severity → Kind → Confidence order (closed set + rendering in [tags.md](../tags.md)) + **absolute PR file URL link** + one-line description.
    - File-reference link format (MANDATORY -- never emit relative paths like `[file.ts](repos/...)`):
      `[<repo-relative path>#L<startLine>(-L<endLine>)](<fileLinkTemplate with {path}/{startLine}/{endLine} substituted>)`
      The subagent summaries already returned links in this format -- copy them verbatim into the Action Items. Do NOT construct URLs yourself; the template comes from the provider file (see `providers/{pr-platform}.md`).
-   - Zero items survive -> write `(none)`. Do NOT invent items.
+   - Zero items survive -> write `(none)`.
 3. Write `pr-review/{repo}/{prId}/sections/05-tldr.md`. See [reference.md](../reference.md#tldr-section-file-template) for template.
 4. IF this PR fixes an ICM incident -> write `pr-review/{repo}/{prId}/sections/90-icm.md` with the ICM-comment template from [reference.md](../reference.md#icm-comment-section-file-template). Otherwise skip (the section won't be included in the concat).
 5. Build `pr-review/{repo}/{prId}/pr-comment.md` -- this is the verbatim PR-comment body, a single togglable block per review round (v3.6.0). **Always-visible**: AI header + `## AI Code Review` title + TL;DR (with Action Items). **Collapsed `<details>` (default-closed)**: Intent and Validation (chain per blocking item). The whole comment is wrapped in an outer `<details open>` (default-expanded; click the summary to collapse the entire round). The raw subagent analyses (20-logic / 30-impact / 40-quality) are NOT posted -- they duplicate the validated findings and, being pre-validation, can contradict the Validation verdicts; they stay in `review.md` for local exploration. See [reference.md](../reference.md#pr-comment-artifact-template) for the `pr-review-assemble.mjs comment` recipe + the `comment-meta.json` fields (`verdict` / `wrap` / `collapse`; the last two come from the provider's `commentCapabilities`). This file lives OUTSIDE `sections/` so it does not get duplicated by the `review.md` concat in Step 9.1.

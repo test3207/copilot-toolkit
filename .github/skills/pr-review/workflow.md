@@ -38,7 +38,7 @@ Output artifacts (NOT inside `sections/`, so they don't get re-included by the c
 1. **Local-first, post-mode-gated** - Always save content locally before any remote change. Whether Step 9.2 posts the PR comment is governed by `post-mode` (resolved in Step 0): `confirm` (default) asks first, `auto` posts unattended, `skip` never posts. Worktree cleanup (Step 9.3) runs regardless.
 2. **Section files are the canonical record** - Each step writes to its own section file. The final `review.md` is a concat artifact, regenerated from sections any time.
 3. **Never replace full PR description** - Only add/modify specific sections when explicitly requested.
-4. **No main-agent reads of `chat-session-resources/*/content.json`** - If you find yourself about to read one, STOP: it's a subagent response blob. The new contract returns small summaries; if you see a blob, the subagent violated its output contract -- log and proceed with the summary it returned, do not read the blob.
+4. **No main-agent reads of `chat-session-resources/*/content.json`** - Those are subagent response blobs. The contract returns small summaries; if you see a blob, the subagent violated its output contract -- log and proceed with the summary it returned, do not read the blob.
 5. **Terminal discipline (runtime)** - ad-hoc probes and throwaway scripts the main agent or any subagent runs during a review follow the shared **Terminal Safety** rule (the `## Terminal Safety` section of the consumer's `copilot-instructions.md`): no inline multi-line shell/node -- write a `.mjs` to `tmp/` and run it. The failure-mode rationale lives there, not here.
 
 ---
@@ -52,20 +52,19 @@ Workflow is split into three step files to keep this orchestrator under budget. 
 | [steps/prep.md](steps/prep.md) | 0–5: resolve provider, PR info, threads, isolated worktree, diff, section dir + header | After todo list is built; before Step 0. |
 | [steps/analyze.md](steps/analyze.md) | 6–7: intent + MANDATORY parallel subagent dispatch (7a/b/c) + conditional 7d validator | After Step 5 completes. |
 | [steps/finalize.md](steps/finalize.md) | 8–9: verdict + Action Items + assemble + post + remove worktree | After Step 7 (or 7d) completes. |
+| [harness-profile/{profile}.md](harness-profile/_index.md) | — | Once in Step 0, after `pr-review-config.mjs` resolves `harnessProfile` (`strict` default). Layer-4 model-capability scaffolding only; the workflow contract, safety rules, and cleanup below hold at every profile. |
 
 Cross-file references: subagent prompts (in `.github/agents/pr-*.md`) call out "Step 9.1b hard gate" by name only -- they do not read the workflow files. The file-link safe-replacement table they need is in `providers/{pr-platform}.md`, not here.
 
 ---
 
-## Anti-Summarization Rule
+## Assembly Rule
 
-The PR Comment body (`pr-comment.md`) MUST be assembled by the `pr-review-assemble.mjs comment` recipe (which pulls the section files + wraps them in the collapsible structure) via terminal, NOT rewritten by the main agent from memory. The reference template shows the exact recipe + `comment-meta.json` fields.
+The PR Comment body (`pr-comment.md`) is assembled by the `pr-review-assemble.mjs comment` recipe (which pulls the section files + wraps them in the collapsible structure) via terminal. The reference template shows the exact recipe + `comment-meta.json` fields.
 
-Do NOT:
+Do NOT hand-edit the assembler's collapsible structure -- the curated section set (intent / validation folded as collapsed `<details>`; raw sections 20/30/40 excluded) and the outer wrapper are the assembler's job, driven by the provider's `commentCapabilities`. ICM (`90-icm.md`) is written locally only (never posted) and stays in `review.md`.
 
-- Rewrite findings from memory or conversation context
-- Condense tables in the included sections into summary counts (e.g., "3 High issues" instead of the actual 3 rows in `50-validation.md`)
-- Hand-edit the assembler's collapsible structure -- the curated section set (intent / validation folded as collapsed `<details>`; raw sections 20/30/40 excluded) and the outer wrapper are the assembler's job, driven by the provider's `commentCapabilities`. ICM (`90-icm.md`) is written locally only (never posted) and stays in `review.md`.
+> The "never rewrite from memory / never condense to counts" self-checks are layer-4 scaffolding and live in the resolved [harness-profile](harness-profile/_index.md) file, not here.
 
 **Verification before Step 9.2**: `(Get-Content "pr-review/$repo/$prId/pr-comment.md").Count` is reasonable (typically ~150-300 lines for a non-trivial PR; not 5 lines because the concat silently broke). If suspiciously short, re-run the assembly.
 

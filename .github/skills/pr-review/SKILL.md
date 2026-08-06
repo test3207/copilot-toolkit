@@ -26,13 +26,14 @@ When NOT to use it:
 - `repo` — repo name (from the matched registry entry in registry mode, or `repoName` from the derived git remote in derive mode).
 - `repoContext` — the metadata bundle the entry prompt resolved, identical shape in both modes: `path`, `targetBranch`, `pr-platform`, `ado-repo-server` + `repo-guid` (if ADO), coding-standards list (registry list, or language-autodetected in derive mode), anti-pattern allowlist. See [Input Resolution (Step 0)](#input-resolution-step-0) for how each field is filled.
 - `post-mode` — `confirm` (default) | `auto` | `skip`, resolved by the entry prompt (Step 0) via `scripts/pr-review-config.mjs`. Gates Step 9.2: `confirm` asks before posting, `auto` posts unattended, `skip` never posts. See [Machine-local `.github/pr-review.local/`](#machine-local-githubpr-reviewlocal).
+- `harness-profile` — `strict` (default) | `standard` | `minimal`, resolved by the same call. Selects how much model-capability scaffolding the run loads; see [harness-profile/_index.md](./harness-profile/_index.md). Never affects `post-mode`, the base-checkout config read, or Step 9.3 cleanup.
 
 ## Quick Reference
 
 | Item | Value |
 | ---- | ----- |
 | Tool name | `pr-review` |
-| Tool version | `v3.6.4` |
+| Tool version | `v3.7.0` |
 | Working dir | `pr-review/{repo}/{prId}/sections/*.md` per-section files; `pr-review/{repo}/{prId}/review.md` is the terminal-concat artifact; the persisted diff is `pr-review/{repo}/{prId}/diff.txt`. All OUTPUT lives under `pr-review/`, which the skill self-ignores via a generated `pr-review/.gitignore` (`*`) on first run -- portable, needs no consumer root `.gitignore` or sync. The PR source branch is checked out into an isolated, SEARCHABLE worktree at `pr-review-worktree/{repo}/{prId}/worktree/` (Step 3, via `scripts/pr-review-worktree.mjs`) -- a SEPARATE, NON-ignored tree so VS Code grep / file / semantic search reach it directly. Reviews never mutate the user's working tree and reviews of different PRs run in parallel. Every git call runs against `{repoContext.path}` (`git -C`), so the reviewed repo may be the workspace root (plugin mode) or a submodule (L2 mode). |
 | Providers | [providers/ado.md](./providers/ado.md), [providers/github.md](./providers/github.md). Add a new file under `providers/` for new hosts; no workflow edits required. |
 | Subagents | `.github/agents/pr-logic-reviewer.md` (7a) · `.github/agents/pr-impact-analyzer.md` (7b) · `.github/agents/pr-quality-checker.md` (7c) · `.github/agents/pr-finding-validator.md` (7d). |
@@ -46,7 +47,8 @@ Performed by the entry prompt, then handed to this skill. Two modes, one output 
 3. **Derive-fallback** (only when no registry index exists, or no entry matches): build `repoContext` at runtime — `node .copilot-toolkit/scripts/derive-repo-context.mjs "$(git --no-pager remote get-url origin)"` for `{ platform, org/project/repoName | owner/repoName }`; `path = .`; merge any [`.github/pr-review.json`](#optional-githubpr-reviewjson) fields; auto-detect coding-standards / anti-pattern language packs from the diff (see [steps/analyze.md](./steps/analyze.md) Step 6). If `platform == unknown` and no config file supplies one, STOP.
 4. Read `repoContext.pr-platform` (default `ado`). Load [providers/{pr-platform}.md](./providers/) — every PR-host-specific recipe (fetch, post, URL format, auto-link rules) comes from this file. The workflow body is host-agnostic.
 5. **Preflight + access method**: run `node .copilot-toolkit/scripts/preflight.mjs --platform {pr-platform} --mcp-configured <ado-repo-server present?>`. Resolve the provider access method (`ado-access` / `gh-access`) = `.github/pr-review.json` override else the report's `access.recommended`. A missing hard dep (node / git, or the platform credential `az`/`gh`) STOPS with remediation -- there is no offline mode. See [providers/{pr-platform}.md](./providers/) → `accessMethods`.
-6. **Post-mode**: run `node .copilot-toolkit/scripts/pr-review-config.mjs resolve --repo-path {path} [--post-mode <cli flag>]` → `postMode` (`confirm` default | `auto` | `skip`), which gates Step 9.2. Precedence: CLI `--auto`/`--confirm`/`--skip-post` > machine-local `.github/pr-review.local/config.json` > `confirm`. On `firstRun: true`, surface the returned `notice` once. See [Machine-local `.github/pr-review.local/`](#machine-local-githubpr-reviewlocal).
+6. **Post-mode + harness-profile**: run `node .copilot-toolkit/scripts/pr-review-config.mjs resolve --repo-path {path} [--post-mode <cli flag>] [--harness-profile <cli flag>]` → `postMode` (`confirm` default | `auto` | `skip`), which gates Step 9.2, and `harnessProfile` (`strict` default | `standard` | `minimal`), which selects the scaffolding file read next. Same precedence for both: CLI flag > machine-local `.github/pr-review.local/config.json` > default. On `firstRun: true`, surface the returned `notice` once. See [Machine-local `.github/pr-review.local/`](#machine-local-githubpr-reviewlocal).
+7. **Load the harness profile**: read `harness-profile/{harnessProfile}.md` once. See [harness-profile/_index.md](./harness-profile/_index.md).
 
 ## Optional `.github/pr-review.json`
 
@@ -77,18 +79,20 @@ Any present field augments/overrides the corresponding derived value. The schema
 
 ## Machine-local `.github/pr-review.local/`
 
-Machine-local, NEVER-committed preferences for the reviewed repo. Holds `config.json` with a single `post-mode` key. The folder self-ignores via its own generated `.gitignore` (`*`) -- like the `pr-review/` output tree, it needs no edit to the repo's root `.gitignore`.
+Machine-local, NEVER-committed preferences for the reviewed repo. Holds `config.json` with `post-mode` and `harness-profile`. The folder self-ignores via its own generated `.gitignore` (`*`) -- like the `pr-review/` output tree, it needs no edit to the repo's root `.gitignore`.
 
 ```jsonc
 {
-  "post-mode": "confirm"   // confirm (default) | auto | skip -- gates Step 9.2 posting
+  "post-mode": "confirm",       // confirm (default) | auto | skip -- gates Step 9.2 posting
+  "harness-profile": "strict"   // strict (default) | standard | minimal -- scaffolding tier
 }
 ```
 
-- Resolved in Step 0 by `scripts/pr-review-config.mjs`; precedence **CLI flag (`--auto`/`--confirm`/`--skip-post`) > `config.json` > default `confirm`**.
+- Resolved in Step 0 by `scripts/pr-review-config.mjs`; precedence **CLI flag (`--auto`/`--confirm`/`--skip-post`, `--harness-profile <p>`) > `config.json` > default (`confirm` / `strict`)**.
 - `confirm` (default) = ask before Step 9.2 posts (current behavior). `auto` = post unattended (full hands-off run). `skip` = never post; keep the local `pr-comment.md` only (dry-run).
+- `harness-profile` is machine-local for the same reason the profiles exist: which scaffolding a model needs is a property of the operator's model, not of the repo. It is also a **layer-4-only** switch -- no profile weakens `post-mode`, the base-checkout `worktree` config read, or the Step 9.3 cleanup.
 - **`auto` is deliberately kept OUT of committed config** (registry entry / `.github/pr-review.json`): unattended posting to a real PR is an operator/machine trust decision, not a repo-shared property -- if it rode into the repo, every checkout would silently inherit it. So it lives only here (machine-local) or in a per-call `--auto` flag; the safe default is always `confirm`.
-- **First-run auto-init**: on an interactive run with no flag and no `config.json`, Step 0's script scaffolds this folder (default `confirm`), self-ignores it, and surfaces a one-time notice (three modes + the `auto` safety warning). A CLI flag (unattended / CI path) writes nothing.
+- **First-run auto-init**: on an interactive run with no flag and no `config.json`, Step 0's script scaffolds this folder (defaults `confirm` + `strict`), self-ignores it, and surfaces a one-time notice (modes + profiles + the `auto` safety warning). A CLI flag (unattended / CI path) writes nothing.
 
 ## Workflow
 
@@ -102,17 +106,11 @@ Orchestration entry point is [workflow.md](./workflow.md); it indexes three step
 - `decision.md` — main agent reads in Step 8 for verdict + Action Items gates.
 - `tags.md` — canonical Action-Item tag taxonomy; the tag allowlist is inlined into each producer's output-format section, so subagents need not load `tags.md` in full. Consumers (finalize / decision / reference / rules / anti-patterns) point to it for tag meaning, sort, and rendering.
 
-## Todo-Driven Execution
+## Execution
 
-**BEFORE any review action, create a todo list using `manage_todo_list`.**
+Read [workflow.md](./workflow.md) first -- it is the orchestrator and carries the step-file index plus the Flow Summary (Steps 0-9) the run follows.
 
-```
-1. Read workflow.md to get the orchestrator + step file index.
-2. Create todo list with ALL steps 0–9 from the Flow Summary (one todo per step / sub-step).
-3. Before each step's todo, read the matching step file (steps/prep.md / steps/analyze.md / steps/finalize.md) if not yet loaded.
-4. Execute steps ONE BY ONE, marking progress.
-5. Never skip steps or execute without todo tracking.
-```
+Step 0 resolves a **harness profile** (`strict` default | `standard` | `minimal`) alongside `post-mode`; read the matching [harness-profile/{profile}.md](./harness-profile/_index.md) once and apply it for the rest of the run. That file holds the model-capability scaffolding (dispatch self-checks, assembly self-checks, todo-driven execution) which is tunable per model. The workflow contract, the safety rules, and Step 9.3 cleanup are NOT part of it -- they hold at every profile.
 
 **Key Principle**: Check out the PR source branch into an isolated git worktree (parallel-safe; never touches the user's working tree); subagents do deep analysis in their own contexts and write directly to section files. Main agent never reads source files inline; main agent never reads back full subagent payloads.
 
@@ -139,8 +137,8 @@ When posting review comments to PR:
 
    - `<model_name>`: state your exact model name as defined in your system instructions. Do not guess.
    - `<tool_name>`: the **Tool name** value from the Quick Reference table above (currently `pr-review`). Use exactly that string.
-   - `<tool_version>`: the **Tool version** value from the Quick Reference table above (currently `v3.6.4`). Use exactly that string -- do not substitute a different version.
-4. **Post the full assembled body** — the assembler emits the always-visible header + TL;DR + Action Items, then the collapsed `<details>` sections (Intent, Validation) inside an outer `<details open>`. Do NOT condense or rewrite from memory.
+   - `<tool_version>`: the **Tool version** value from the Quick Reference table above (currently `v3.7.0`). Use exactly that string -- do not substitute a different version.
+4. **Post the full assembled body** — the assembler emits the always-visible header + TL;DR + Action Items, then the collapsed `<details>` sections (Intent, Validation) inside an outer `<details open>`.
 5. **ICM Comment is NOT posted to PR** — it is saved in `sections/90-icm.md` for manual copy-paste.
 
 ## Rules
@@ -151,7 +149,7 @@ When posting review comments to PR:
 
 ## References
 
-- [workflow.md](./workflow.md) — main orchestrator (intro + section-file model + Rules + step file index + Anti-Summarization Rule + Flow Summary).
+- [workflow.md](./workflow.md) — main orchestrator (intro + section-file model + Rules + step file index + Assembly Rule + Flow Summary).
 - [steps/prep.md](./steps/prep.md) — Steps 0–5 (provider, fetch, section scaffolding).
 - [steps/analyze.md](./steps/analyze.md) — Steps 6–7 (intent + MANDATORY parallel subagent dispatch).
 - [steps/finalize.md](./steps/finalize.md) — Steps 8–9 (verdict, assemble, post).
@@ -160,4 +158,5 @@ When posting review comments to PR:
 - [decision.md](./decision.md) — verdict gates + Action Items construction gates (main agent, Step 8).
 - [tags.md](./tags.md) — canonical author-facing Action-Item tag taxonomy (Severity + Kind + Confidence closed sets, ordering, axis mapping, rendering, allowlist). Subagents reach it via the inline allowlist line in their output-format section.
 - [providers/_index.md](./providers/_index.md) — provider contract spec.
+- [harness-profile/_index.md](./harness-profile/_index.md) — layer model + profile contract (`strict` | `standard` | `minimal`); the layer-4 scaffolding files themselves.
 - [anti-patterns/index.md](./anti-patterns/index.md) — global detection rules and group index.

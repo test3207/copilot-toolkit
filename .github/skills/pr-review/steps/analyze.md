@@ -39,14 +39,13 @@ Write `pr-review/{repo}/{prId}/sections/10-intent.md`:
 
 ## Step 7: Deep Analysis (Subagent Dispatch)
 
-**MANDATORY**: Dispatch 7a/7b/7c via `runSubagent` in a single parallel tool-call block. Inline execution by the main agent is FORBIDDEN regardless of context pressure or PR size.
-
-_Self-check before this step_: if your next planned tool call is `read_file` against a source file from the diff, STOP -- you are about to execute the analyses inline. Issue three `runSubagent` calls instead.
+**MANDATORY**: Dispatch 7a/7b/7c via `runSubagent` in a single parallel tool-call block.
 
 _Why unconditional_:
 - **Context isolation** -- each subagent gets a fresh window; the main agent stays small enough to assemble Step 8.
 - **Independent perspectives** -- 7a/7b/7c each load a different prompt + analysis bias; running inline collapses them into one perspective.
-- **No small-PR exception** -- the cost is 3 dispatches; the benefit applies equally to small PRs.
+
+> The self-checks that keep this from degrading into inline execution are layer-4 scaffolding and live in the resolved [harness-profile](../harness-profile/_index.md) file, not here.
 
 **Shared subagent prompt template** (fill placeholders per subagent):
 
@@ -73,7 +72,7 @@ Output contract: WRITE full analysis to pr-review/{repo}/{prId}/sections/{file};
 | -------- | ---- | -------------------- |
 | **7a: pr-logic-reviewer** | code correctness (logic, why, corners, tests) | `20-logic.md` |
 | **7b: pr-impact-analyzer** | call chain + regression risk | `30-impact.md` |
-| **7c: pr-quality-checker** (Haiku 4.5) | similar code + smells | `40-quality.md` |
+| **7c: pr-quality-checker** (a cheap/fast model is sufficient) | similar code + smells | `40-quality.md` |
 
 Each subagent returns a compact summary message. Main agent collects the 3 summaries -- nothing else. No re-reading of `content.json` blobs.
 

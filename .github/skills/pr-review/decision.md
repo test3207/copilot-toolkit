@@ -42,9 +42,9 @@ THEN verdict = "Request Changes"
 3. Root cause: the agent used overall regression risk (Low) to determine the verdict instead of the highest-severity finding.
 4. Fix: Always derive verdict from findings, not from regression risk.
 
-## Action Items Construction (Anti-Padding Rule)
+## Action Items Construction (Gates)
 
-The Action Items section MUST be empty when the PR is clean. Do not invent items to look thorough -- an empty list on a clean PR is the correct outcome.
+The Action Items section MUST be empty when the PR is clean -- an empty list on a clean PR is the correct outcome.
 
 Run every candidate item through these gates. If it fails any gate, drop it.
 

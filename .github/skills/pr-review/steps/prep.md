@@ -12,7 +12,7 @@ If `providers/{pr-platform}.md` does not exist, STOP and ask the user to author 
 
 **Preflight + access method**: run `node .copilot-toolkit/scripts/preflight.mjs --platform {pr-platform} --mcp-configured <true if repoContext has an ado-repo-server, else false>` (the entry prompt may have already done this and passed the result). If the report's `blocking` is non-empty (node / git / the platform credential `az` or `gh` missing) STOP and surface its `remediation` -- there is no offline mode. Resolve the provider access method (`ado-access` / `gh-access`) = explicit `.github/pr-review.json` override, else the report's `access.recommended`. Steps 1, 2, and 9 run the recipe variant for the resolved method. See `providers/{pr-platform}.md` -> `accessMethods`.
 
-**Resolve post-mode** (gates Step 9.2): `node .copilot-toolkit/scripts/pr-review-config.mjs resolve --repo-path {repoContext.path} [--post-mode <cli flag if the caller passed --auto/--confirm/--skip-post>]`. Capture `postMode` (`confirm` default | `auto` | `skip`). If the JSON has `firstRun: true`, surface its `notice` ONCE (non-blocking: three modes + the `auto` safety warning). The entry prompt may have already resolved this and passed `post-mode` -- if so, skip. Precedence and the machine-local `.github/pr-review.local/` file are documented in SKILL.md.
+**Resolve post-mode + harness-profile** (one call): `node .copilot-toolkit/scripts/pr-review-config.mjs resolve --repo-path {repoContext.path} [--post-mode <cli flag if the caller passed --auto/--confirm/--skip-post>] [--harness-profile <cli flag if passed>]`. Capture `postMode` (`confirm` default | `auto` | `skip`, gates Step 9.2) and `harnessProfile` (`strict` default | `standard` | `minimal`). If the JSON has `firstRun: true`, surface its `notice` ONCE (non-blocking: modes + profiles + the `auto` safety warning). The entry prompt may have already resolved this and passed both values -- if so, skip. Then read `harness-profile/{harnessProfile}.md` ONCE and apply it for the rest of the run. Precedence and the machine-local `.github/pr-review.local/` file are documented in SKILL.md.
 
 ## Step 1: Get PR Info
 
@@ -64,7 +64,7 @@ Step 3's script already computed and persisted the change set -- no extra `git` 
 
 > **Empty diff on an already-merged PR**: the `target...source` range yields an empty patch when the source is already an ancestor of the target (the PR was merged). Normal reviews never hit this -- Step 1 skips non-`active` PRs -- but when you deliberately review a merged PR (a Step 1 override), fall back to the provider's `fetchDiff` recipe (GitHub: `gh pr diff {prId}`; see `providers/{pr-platform}.md`) so Step 7 analyzes the real change set, not an empty file.
 
-**Context budget signal**: If `worktreeInfo.changedFiles` > 30 OR diff lines > 800, set `contextPressure = high`. This signals only -- subagents in Step 7 are mandatory regardless of this flag.
+**Context budget signal**: If `worktreeInfo.changedFiles` > 30 OR diff lines > 800, set `contextPressure = high`. This signals only -- it feeds the Step 8 Coverage Note and never changes the Step 7 dispatch contract.
 
 ## Step 5: Create section dir + header + metadata + build fileLinkTemplate
 

@@ -62,6 +62,27 @@ When splitting or reorganizing files:
 5. **Dedup** — grep key phrases to confirm they exist in exactly one canonical location
 6. **Budget check** — verify all files stay within size budgets above
 
+## Harness Layers (what depreciates)
+
+Prose harnesses mix content that ages at very different rates. Interleaving them means the part that rots as models improve cannot be measured or removed independently of the part that never rots.
+
+| Layer | Depreciates? | Examples |
+| --- | --- | --- |
+| 1. Our-world facts | Never — no model can infer them | provider recipes, tag taxonomies, output paths, schemas |
+| 2. Resource constraints | Never fully — scale changes, floor stays | context budget, subagent isolation, section-file model |
+| 3. Safety / authority | Never, and must NOT be model-dependent | confirm-before-post defaults, trusted-config reads, unconditional cleanup |
+| 4. Model-capability compensation | Fast, and model-**specific** | forced todo lists, anti-inlining self-checks, anti-summarization prohibitions |
+
+**Classification test**: does the rule constrain a property of the **output**, or a property of the **agent's own process**? Output → layer 1/2/3, keep unconditional. Process / tendency → layer 4, tier it.
+
+### Rules
+
+1. **Tier layer 4, never layers 1-3.** Put layer-4 content in its own conditionally-loaded file (e.g. `harness-profile/<tier>.md`, as `skills/pr-review/` does) so "run with the scaffolding removed" is a single-flag A/B experiment.
+2. **Resolve the tier with an existing precedence shape** — CLI flag > machine-local config > default. Do not invent a new mechanism.
+3. **Restatement is the fingerprint.** A rule restated in a third file means it failed to hold in the first two — that is layer-4 evidence, not emphasis. Consolidate it into the tiered file instead of adding a fourth copy.
+4. **Over-scaffolding is a crossover, not just waste.** Scaffolding written for a weaker model can degrade a stronger one: it spends context that would go to the source and locks in a fixed plan. "Write enough harness for the weakest model" is not a safe default.
+5. **Declare capability, not a model.** In agent files prefer an intent ("a cheap/fast model is sufficient") over a hard `model:` pin — a consumer without that exact model otherwise fails or silently falls back to a model the prompt was not written for.
+
 ## Reference Loading Rules
 
 References (`read file X`) load entire files into context. Design them carefully.
