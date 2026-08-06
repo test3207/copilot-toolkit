@@ -45,11 +45,11 @@ Output artifacts (NOT inside `sections/`, so they don't get re-included by the c
 
 ## Step files
 
-Workflow is split into three step files to keep this orchestrator under budget. Read each one **only when its steps are next on the todo**:
+Workflow is split into three step files to keep this orchestrator under budget. Read each one **only when its steps are next**:
 
 | File | Steps | Read when |
 | ---- | ----- | --------- |
-| [steps/prep.md](steps/prep.md) | 0–5: resolve provider, PR info, threads, isolated worktree, diff, section dir + header | After todo list is built; before Step 0. |
+| [steps/prep.md](steps/prep.md) | 0–5: resolve provider, PR info, threads, isolated worktree, diff, section dir + header | First, before Step 0. |
 | [steps/analyze.md](steps/analyze.md) | 6–7: intent + MANDATORY parallel subagent dispatch (7a/b/c) + conditional 7d validator | After Step 5 completes. |
 | [steps/finalize.md](steps/finalize.md) | 8–9: verdict + Action Items + assemble + post + remove worktree | After Step 7 (or 7d) completes. |
 | [harness-profile/{profile}.md](harness-profile/_index.md) | — | Once in Step 0, after `pr-review-config.mjs` resolves `harnessProfile` (`strict` default). Layer-4 model-capability scaffolding only; the workflow contract, safety rules, and cleanup below hold at every profile. |

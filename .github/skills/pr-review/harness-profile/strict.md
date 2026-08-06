@@ -23,7 +23,7 @@ Nothing here introduces new workflow behavior: each cluster restates or self-che
 
 ## D. Todo-driven execution
 
-**BEFORE any review action, create a todo list using `manage_todo_list`.**
+**As soon as this profile is loaded (the entry prompt's Step 0 resolve, or Step 0 of the workflow at the latest) and before Step 1, create a todo list using `manage_todo_list`.**
 
 ```text
 1. Read workflow.md to get the orchestrator + step file index.
