@@ -32,8 +32,8 @@ When NOT to use it:
 | Item | Value |
 | ---- | ----- |
 | Tool name | `pr-review` |
-| Tool version | `v3.6.4` |
-| Working dir | `pr-review/{repo}/{prId}/sections/*.md` per-section files; `pr-review/{repo}/{prId}/review.md` is the terminal-concat artifact; the persisted diff is `pr-review/{repo}/{prId}/diff.txt`. All OUTPUT lives under `pr-review/`, which the skill self-ignores via a generated `pr-review/.gitignore` (`*`) on first run -- portable, needs no consumer root `.gitignore` or sync. The PR source branch is checked out into an isolated, SEARCHABLE worktree at `pr-review-worktree/{repo}/{prId}/worktree/` (Step 3, via `scripts/pr-review-worktree.mjs`) -- a SEPARATE, NON-ignored tree so VS Code grep / file / semantic search reach it directly. Reviews never mutate the user's working tree and reviews of different PRs run in parallel. Every git call runs against `{repoContext.path}` (`git -C`), so the reviewed repo may be the workspace root (plugin mode) or a submodule (L2 mode). |
+| Tool version | `v3.6.5` |
+| Working dir | `pr-review/{repo}/{prId}/sections/*.md` per-section files; `pr-review/{repo}/{prId}/review.md` is the terminal-concat artifact; the persisted diff is `pr-review/{repo}/{prId}/diff.txt`. All OUTPUT lives under `pr-review/`, which the skill self-ignores via a generated `pr-review/.gitignore` (`*`) on first run -- portable, needs no consumer root `.gitignore` or sync. The PR source branch is checked out into an isolated, SEARCHABLE worktree at `pr-review-worktree/{repo}/{prId}/worktree*/` (Step 3, via `scripts/pr-review-worktree.mjs`; primary suffix `worktree`, fallback `-2` through `-10` if the primary path is still held by an editor) -- a SEPARATE, NON-ignored tree so VS Code grep / file / semantic search reach it directly. Orphan leaves from prior runs that could not be deleted are hidden via `pr-review-worktree/.gitignore` (denylist) and swept on the next setup. Reviews never mutate the user's working tree and reviews of different PRs run in parallel. Every git call runs against `{repoContext.path}` (`git -C`), so the reviewed repo may be the workspace root (plugin mode) or a submodule (L2 mode). |
 | Providers | [providers/ado.md](./providers/ado.md), [providers/github.md](./providers/github.md). Add a new file under `providers/` for new hosts; no workflow edits required. |
 | Subagents | `.github/agents/pr-logic-reviewer.md` (7a) · `.github/agents/pr-impact-analyzer.md` (7b) · `.github/agents/pr-quality-checker.md` (7c) · `.github/agents/pr-finding-validator.md` (7d). |
 
@@ -139,7 +139,7 @@ When posting review comments to PR:
 
    - `<model_name>`: state your exact model name as defined in your system instructions. Do not guess.
    - `<tool_name>`: the **Tool name** value from the Quick Reference table above (currently `pr-review`). Use exactly that string.
-   - `<tool_version>`: the **Tool version** value from the Quick Reference table above (currently `v3.6.4`). Use exactly that string -- do not substitute a different version.
+   - `<tool_version>`: the **Tool version** value from the Quick Reference table above (currently `v3.6.5`). Use exactly that string -- do not substitute a different version.
 4. **Post the full assembled body** — the assembler emits the always-visible header + TL;DR + Action Items, then the collapsed `<details>` sections (Intent, Validation) inside an outer `<details open>`. Do NOT condense or rewrite from memory.
 5. **ICM Comment is NOT posted to PR** — it is saved in `sections/90-icm.md` for manual copy-paste.
 

@@ -39,6 +39,8 @@ Write `pr-review/{repo}/{prId}/sections/10-intent.md`:
 
 ## Step 7: Deep Analysis (Subagent Dispatch)
 
+_Pre-dispatch check_: confirm that `worktreeInfo.worktree` is the absolute path from Step 3 (no `{` placeholder, starts with `/` or a drive letter, and exists on disk); if any condition fails, STOP and surface the failure instead of dispatching subagents.
+
 **MANDATORY**: Dispatch 7a/7b/7c via `runSubagent` in a single parallel tool-call block. Inline execution by the main agent is FORBIDDEN regardless of context pressure or PR size.
 
 _Self-check before this step_: if your next planned tool call is `read_file` against a source file from the diff, STOP -- you are about to execute the analyses inline. Issue three `runSubagent` calls instead.
@@ -60,7 +62,7 @@ fileLinkTemplate: {fileLinkTemplate from Step 5}        # Template with {path}/{
 forbiddenAutoLinkPatterns: {forbiddenAutoLinkPatterns from Step 5}   # Regex list. Never emit text that matches these; use the safe replacements shown in the table.
 Intent: {one-line from Step 6}
 Change Type: {Step 6}
-Repo path: pr-review-worktree/{repo}/{prId}/worktree    # isolated git worktree checked out to the PR source branch. Read/search ALL source files from here -- it reflects the PR head and reading it never disturbs the user's live tree. Do NOT read source from the host repo root. This tree is NOT ignored, so `grep_search`, `file_search`, and `semantic_search` all reach it -- scope searches to it via `includePattern` set to this path (no `includeIgnoredFiles`). Search division: grep/file/semantic search here for discovery + cross-references; `read_file` here for a changed file's full content; the exact change set is pr-review/{repo}/{prId}/diff.txt (do NOT re-run `git diff`).
+Repo path: {worktreeInfo.worktree}    # absolute path returned by Step 3 setup -- forward verbatim, do NOT reconstruct from {repo}/{prId} (a -N suffix may be present). Isolated git worktree checked out to the PR source branch. Read/search ALL source files from here -- it reflects the PR head and reading it never disturbs the user's live tree. Do NOT read source from the host repo root. This tree is NOT ignored, so `grep_search`, `file_search`, and `semantic_search` all reach it -- scope searches to it via `includePattern` set to this path (no `includeIgnoredFiles`). Search division: grep/file/semantic search here for discovery + cross-references; `read_file` here for a changed file's full content; the exact change set is pr-review/{repo}/{prId}/diff.txt (do NOT re-run `git diff`).
 Target branch: {targetBranch}
 Changed files: see pr-review/{repo}/{prId}/diff.txt
 Anti-pattern groups to load: {list of file paths from Step 6 scan}

@@ -30,12 +30,16 @@
 //
 // stdout (setup) = one JSON object:
 //   { worktree, outDir, diffFile, changedFiles, additions, deletions,
-//     submoduleBumps: [{ path, from, to, commits? }], enrichment: {...}, warnings: [] }
+//     submoduleBumps: [{ path, from, to, commits? }], enrichment: {...}, warnings: [],
+//     orphans?: { count, files, bytes, hidden: true } }
+// stdout (cleanup) = one JSON object:
+//   { removed: boolean, paths: string[], orphansHidden: number,
+//     leaked?: [{ path, remainingFiles, error }], hint?: string }
 // Exit: 0 = ok; 1 = usage/precondition error; 2 = git setup failure (worktree unavailable / fetch / add).
 
 import { execFileSync, execSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, rmdirSync, statSync, readdirSync, unlinkSync } from 'node:fs';
+import { resolve, relative } from 'node:path';
 
 function arg(flag, def) {
   const i = process.argv.indexOf(flag);
@@ -63,9 +67,8 @@ if (/[/\\]|\.\./.test(repo) || /[/\\]|\.\./.test(prId)) {
   fail(1, '--repo and --pr-id must not contain path separators or ".."');
 }
 
-// Absolute worktree path, resolved from the node process cwd (= workspace root). MUST be
-// absolute: `git -C {repoPath}` resolves relative paths against {repoPath}, not the workspace root.
-const worktree = resolve(process.cwd(), 'pr-review-worktree', repo, prId, 'worktree');
+// prDir is the per-PR container; the actual worktree leaf is allocated inside it by P1.
+const prDir = resolve(process.cwd(), 'pr-review-worktree', repo, prId);
 // Output artifacts live under the self-ignored pr-review/ tree (relative to workspace root).
 const outDir = resolve(process.cwd(), 'pr-review', repo, prId);
 const diffFile = resolve(outDir, 'diff.txt');
@@ -88,6 +91,117 @@ function gitAt(dir, args) {
       stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 1024 * 1024,
     }).toString() };
   } catch (e) { return { ok: false, out: (e.stdout || '').toString(), err: (e.stderr || e.message || '').toString() }; }
+}
+
+// 'live' | 'orphan' | 'unknown'. A linked worktree's .git is a file holding 'gitdir: <path>';
+// after worktree remove --force succeeds the admin dir is gone, so a surviving leaf reads orphan.
+function leafState(leafDir) {
+  const gitFile = resolve(leafDir, '.git');
+  let stat, content;
+  try { stat = statSync(gitFile); } catch { return 'unknown'; }
+  if (!stat.isFile()) return 'unknown';
+  try { content = readFileSync(gitFile, 'utf8'); } catch { return 'unknown'; }
+  const m = content.match(/^gitdir:\s*(.+)/m);
+  if (!m) return 'unknown';
+  return existsSync(resolve(leafDir, m[1].trim())) ? 'live' : 'orphan';
+}
+
+function escapeGitignorePattern(s) {
+  s = s.replace(/[\\#![\]*?]/g, '\\$&');
+  return s.replace(/ +$/, (sp) => sp.replace(/ /g, '\\ '));
+}
+
+function retryDelete(dir) {
+  try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort */ }
+}
+
+function scanLeaves(base) {
+  const leaves = [];
+  if (!existsSync(base)) return leaves;
+  let repoEntries;
+  try { repoEntries = readdirSync(base, { withFileTypes: true }); } catch { return leaves; }
+  for (const re of repoEntries) {
+    if (!re.isDirectory()) continue;
+    const repoDir = resolve(base, re.name);
+    let prEntries;
+    try { prEntries = readdirSync(repoDir, { withFileTypes: true }); } catch { continue; }
+    for (const pe of prEntries) {
+      if (!pe.isDirectory()) continue;
+      const pd = resolve(repoDir, pe.name);
+      let leafEntries;
+      try { leafEntries = readdirSync(pd, { withFileTypes: true }); } catch { continue; }
+      for (const le of leafEntries) {
+        if (le.isDirectory() && /^worktree(-\d+)?$/.test(le.name)) leaves.push(resolve(pd, le.name));
+      }
+    }
+  }
+  return leaves;
+}
+
+function getOrphans() {
+  return scanLeaves(resolve(process.cwd(), 'pr-review-worktree')).filter((p) => leafState(p) === 'orphan');
+}
+
+function readDenylist() {
+  const denylistPath = resolve(process.cwd(), 'pr-review-worktree', '.gitignore');
+  const base = resolve(process.cwd(), 'pr-review-worktree');
+  const denylisted = new Set();
+  let content;
+  try { content = readFileSync(denylistPath, 'utf8'); } catch { return denylisted; }
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#') || trimmed === '/.gitignore') continue;
+    const pat = trimmed.startsWith('/') ? trimmed.slice(1) : trimmed;
+    const unescaped = pat.replace(/\\([ \\#![\]*?])/g, '$1');
+    denylisted.add(resolve(base, unescaped));
+  }
+  return denylisted;
+}
+
+function orphanSweep() {
+  const denylisted = readDenylist();
+  for (const p of scanLeaves(resolve(process.cwd(), 'pr-review-worktree'))) {
+    const state = leafState(p);
+    if (state === 'live') continue;
+    if (state === 'orphan' || denylisted.has(p)) retryDelete(p);
+  }
+}
+
+function writeDenylist(orphanLeaves) {
+  const denylistPath = resolve(process.cwd(), 'pr-review-worktree', '.gitignore');
+  if (orphanLeaves.length === 0) {
+    try { unlinkSync(denylistPath); } catch { /* not present */ }
+    return;
+  }
+  const base = resolve(process.cwd(), 'pr-review-worktree');
+  const lines = [
+    '# Generated by pr-review-worktree.mjs.',
+    '# Lists known-orphan leaves so git/search hide them.',
+    '# Live worktrees are deliberately absent (denylist not allowlist).',
+    '# Delete this file once all entries have been reclaimed.',
+    '/.gitignore',
+    '',
+  ];
+  for (const p of orphanLeaves) {
+    lines.push('/' + escapeGitignorePattern(relative(base, p).replace(/\\/g, '/')));
+  }
+  lines.push('');
+  writeFileSync(denylistPath, lines.join('\n'));
+}
+
+function countFilesAndBytes(dir) {
+  let files = 0, bytes = 0;
+  const walk = (d) => {
+    let entries;
+    try { entries = readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const full = resolve(d, e.name);
+      if (e.isDirectory()) { walk(full); }
+      else { files++; try { bytes += statSync(full).size; } catch { /* ok */ } }
+    }
+  };
+  walk(dir);
+  return { files, bytes };
 }
 
 function readJson(p) {
@@ -124,19 +238,42 @@ function resolveWorktreeConfig() {
   return cfg;
 }
 
-function preClean() {
-  // Remove any stale registration AND leftover dir. Handles both interrupted-run states:
-  // registered-but-missing (=> add exit 128) and dir-present-but-registration-lost (=> "already exists").
-  if (existsSync(worktree)) {
-    gitTry(['worktree', 'remove', '--force', worktree]);
-    try { rmSync(worktree, { recursive: true, force: true }); } catch { /* best effort */ }
-  }
-  gitTry(['worktree', 'prune']);
-}
-
 if (command === 'cleanup') {
-  preClean();
-  console.log(JSON.stringify({ removed: worktree }));
+  const removedPaths = [];
+  const leakedEntries = [];
+
+  if (existsSync(prDir)) {
+    let entries = [];
+    try { entries = readdirSync(prDir, { withFileTypes: true }); } catch { /* ok */ }
+    for (const e of entries.filter((x) => x.isDirectory() && /^worktree(-\d+)?$/.test(x.name))) {
+      const leafDir = resolve(prDir, e.name);
+      gitTry(['worktree', 'remove', '--force', leafDir]);
+      retryDelete(leafDir);
+      if (!existsSync(leafDir)) {
+        removedPaths.push(leafDir);
+      } else {
+        const { files } = countFilesAndBytes(leafDir);
+        leakedEntries.push({ path: leafDir, remainingFiles: files, error: 'directory still held by editor or language service' });
+      }
+    }
+  }
+
+  gitTry(['worktree', 'prune']);
+  try { rmdirSync(prDir); } catch { /* non-empty ok */ }
+  try { rmdirSync(resolve(process.cwd(), 'pr-review-worktree', repo)); } catch { /* non-empty ok */ }
+
+  const cleanupOrphans = getOrphans();
+  const leakedPaths = leakedEntries.map(e => e.path);
+  const denylistPaths = [...new Set([...cleanupOrphans, ...leakedPaths])];
+  writeDenylist(denylistPaths);
+
+  const removed = leakedEntries.length === 0;
+  const out = { removed, paths: removedPaths, orphansHidden: denylistPaths.length };
+  if (!removed) {
+    out.leaked = leakedEntries;
+    out.hint = 'One or more worktree directories are hidden from git and search but are still on disk -- restart the editor to release held handles so a later setup can reclaim the path.';
+  }
+  console.log(JSON.stringify(out));
   process.exit(0);
 }
 
@@ -157,9 +294,37 @@ if (!gitTry(['worktree', 'list']).ok) {
 // Scaffold the self-ignored OUTPUT tree (diff.txt etc. land here regardless of provider overrides).
 mkdirSync(outDir, { recursive: true });
 writeFileSync(resolve(process.cwd(), 'pr-review', '.gitignore'), '*\n');
-mkdirSync(resolve(process.cwd(), 'pr-review-worktree', repo, prId), { recursive: true });
+mkdirSync(prDir, { recursive: true });
 
-preClean();
+// P4: sweep orphan leaves across all repos before allocating a path
+orphanSweep();
+const orphanLeaves = getOrphans();
+writeDenylist(orphanLeaves);
+let orphanTotalFiles = 0, orphanTotalBytes = 0;
+for (const p of orphanLeaves) {
+  const { files, bytes } = countFilesAndBytes(p);
+  orphanTotalFiles += files;
+  orphanTotalBytes += bytes;
+}
+if (orphanLeaves.length > 0) {
+  warnings.push(`${orphanLeaves.length} orphan worktree ${orphanLeaves.length === 1 ? 'leaf is' : 'leaves are'} still on disk but hidden from git/search -- restart the editor to release held handles, and the next review will reclaim the path`);
+}
+
+// P1: allocate a worktree path; candidates worktree, worktree-2, ... worktree-10
+const leafCandidates = ['worktree', 'worktree-2', 'worktree-3', 'worktree-4', 'worktree-5',
+                        'worktree-6', 'worktree-7', 'worktree-8', 'worktree-9', 'worktree-10'];
+let worktree = null;
+for (const name of leafCandidates) {
+  const candidate = resolve(prDir, name);
+  if (!existsSync(candidate)) { worktree = candidate; break; }
+  gitTry(['worktree', 'remove', '--force', candidate]);
+  retryDelete(candidate);
+  if (!existsSync(candidate)) { worktree = candidate; break; }
+}
+if (!worktree) {
+  fail(2, `all 10 worktree paths are occupied -- editor handles still held; restart the editor and retry: ${leafCandidates.map((n) => resolve(prDir, n)).join(', ')}`);
+}
+gitTry(['worktree', 'prune']);
 
 // Fetch both refs. Source fetch is fatal (can't build the worktree); target fetch is a warning
 // (diff base may be stale -- B-031 -- but the worktree still builds).
@@ -176,7 +341,14 @@ if (!fetchTarget.ok) {
 // so detaching keeps the user's own checkout of the same branch collision-free.
 const add = gitTry(['worktree', 'add', '--detach', worktree, `origin/${source}`]);
 if (!add.ok) {
-  fail(2, `git worktree add failed -- on Windows a MAX_PATH error needs core.longpaths=true: ${add.err.trim()}`);
+  const addErr = add.err.trim();
+  let addHint = '';
+  if (/already exists/i.test(addErr)) {
+    addHint = ' -- the directory is still held by an editor or language service; restart the editor and retry';
+  } else if (/filename too long|max_path|longpaths/i.test(addErr)) {
+    addHint = ' -- on Windows a MAX_PATH error needs core.longpaths=true';
+  }
+  fail(2, `git worktree add failed${addHint}: ${addErr}`);
 }
 
 // ---- Enrichment (opt-in, TRUSTED repos only; failures degrade, never block) ----
@@ -263,4 +435,5 @@ console.log(JSON.stringify({
   submoduleBumps,
   enrichment,
   warnings,
+  ...(orphanLeaves.length > 0 ? { orphans: { count: orphanLeaves.length, files: orphanTotalFiles, bytes: orphanTotalBytes, hidden: true } } : {}),
 }));
