@@ -39,7 +39,7 @@ Write `pr-review/{repo}/{prId}/sections/10-intent.md`:
 
 ## Step 7: Deep Analysis (Subagent Dispatch)
 
-_Pre-dispatch check_: confirm that `worktreeInfo.worktree` is the absolute path from Step 3 (no `{` placeholder, starts with `/` or a drive letter, and exists on disk); if any condition fails, STOP and surface the failure instead of dispatching subagents.
+_Pre-dispatch check_: confirm that `worktreeInfo.worktree` is the absolute path from Step 3 (no `{` placeholder, is POSIX-rooted, drive-rooted (drive letter followed by a separator), or UNC-rooted, and exists on disk); if any condition fails, STOP and surface the failure instead of dispatching subagents.
 
 **MANDATORY**: Dispatch 7a/7b/7c via `runSubagent` in a single parallel tool-call block. Inline execution by the main agent is FORBIDDEN regardless of context pressure or PR size.
 
@@ -83,6 +83,6 @@ Each subagent returns a compact summary message. Main agent collects the 3 summa
 
 1. From the 3 summaries, extract Medium+ findings (severity tag >= Medium) (Severity dimension only — High/Medium in, Low/Nit out; Kind such as Bug does not change this threshold. See [tags.md](../tags.md).)
 2. IF none: skip to Step 8
-3. Dispatch **pr-finding-validator** with: `toolkit-root` + `repo` + `prId` from main agent (so it can locate `pr-review/{repo}/{prId}/sections/`), the Medium+ findings list (with the original URL links preserved), intent summary, `fileLinkTemplate + forbiddenAutoLinkPatterns` from Step 5, paths to `20-logic.md` / `30-impact.md` / `40-quality.md`
+3. Dispatch **pr-finding-validator** with: `toolkit-root` + `repo` + `prId` from main agent (so it can locate `pr-review/{repo}/{prId}/sections/`), the Medium+ findings list (with the original URL links preserved), intent summary, `fileLinkTemplate + forbiddenAutoLinkPatterns` from Step 5, paths to `20-logic.md` / `30-impact.md` / `40-quality.md`, the absolute worktree path from Step 3 (forward `worktreeInfo.worktree` verbatim, do NOT reconstruct from `{repo}/{prId}`, a `-N` suffix may be present), and the diff-file path (`worktreeInfo.diffFile`)
 4. Validator writes `50-validation.md`; returns per-finding verdicts
 5. Apply verdicts to the in-context summaries per the validator's output -- `pr-finding-validator.md` §3 (Verdict) owns the semantics: upgrade where it upgraded; apply **refuted** downgrades where it resolved a determinable precondition (class i); keep genuinely-uncertain findings (class ii) elevated. Do NOT redefine verdict semantics in this dispatch.

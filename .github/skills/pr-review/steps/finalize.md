@@ -69,6 +69,6 @@ node .copilot-toolkit/scripts/pr-review-worktree.mjs cleanup \
   --repo-path {repoContext.path} --repo {repo} --pr-id {prId}
 ```
 
-Read the JSON output. If `removed` is `false`, surface a non-blocking warning to the user: the worktree directories in `leaked[].path` are still held by an editor or language service and are hidden from git/search (`orphansHidden` confirms how many are denylisted); restart the editor to free handles so a later setup can reclaim the path. The output `*.md` files under `pr-review/{repo}/{prId}` live in the separate self-ignored tree and stay.
+Read the JSON output. If `removed` is `false`, surface a non-blocking warning to the user: the worktree directories in `leaked[].path` are still on disk, still visible to git and search, and held by an editor or language service; restart the editor to free handles so a later setup can reclaim the path. The output `*.md` files under `pr-review/{repo}/{prId}` live in the separate self-ignored tree and stay.
 
 > ICM Comment is NOT posted automatically. It is saved in `90-icm.md` for the user to copy-paste into ICM when the PR fixes an incident.
