@@ -69,6 +69,6 @@ node .copilot-toolkit/scripts/pr-review-worktree.mjs cleanup \
   --repo-path {repoContext.path} --repo {repo} --pr-id {prId}
 ```
 
-This runs `git -C {repoContext.path} worktree remove --force` + `prune` and deletes the `pr-review-worktree/{repo}/{prId}/worktree` dir. The output `*.md` files under `pr-review/{repo}/{prId}` live in the separate self-ignored tree and stay.
+Read the JSON output. If `removed` is `false`, surface a non-blocking warning built from whichever keys are present -- **both are optional and either can appear alone**: `leaked[]` lists worktree directories still on disk (with `remainingFiles`, the real filesystem `error`, and `markerError` when the leaf could not even be marked for later reclaim), while `errors[]` lists conditions that are not a leaked worktree, such as a failure to enumerate the review directory. Relay the script's own `hint` string when it is present. A leaked tree stays visible to git and search until an editor restart lets a later setup reclaim it. The output `*.md` files under `pr-review/{repo}/{prId}` live in the separate self-ignored tree and stay.
 
 > ICM Comment is NOT posted automatically. It is saved in `90-icm.md` for the user to copy-paste into ICM when the PR fixes an incident.

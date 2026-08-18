@@ -39,6 +39,8 @@ Write `pr-review/{repo}/{prId}/sections/10-intent.md`:
 
 ## Step 7: Deep Analysis (Subagent Dispatch)
 
+_Pre-dispatch check_: confirm that (1) `worktreeInfo.worktree` is the absolute path from Step 3 (no `{` placeholder, is POSIX-rooted, drive-rooted (drive letter followed by a separator), or UNC-rooted, and exists on disk) and (2) `worktreeInfo.searchGlob` is present and is NOT absolute (must not start with `/`, a drive letter + `:`, or `\\`); if any condition fails, STOP and surface the failure instead of dispatching subagents.
+
 **MANDATORY**: Dispatch 7a/7b/7c via `runSubagent` in a single parallel tool-call block. Inline execution by the main agent is FORBIDDEN regardless of context pressure or PR size.
 
 _Self-check before this step_: if your next planned tool call is `read_file` against a source file from the diff, STOP -- you are about to execute the analyses inline. Issue three `runSubagent` calls instead.
@@ -60,7 +62,8 @@ fileLinkTemplate: {fileLinkTemplate from Step 5}        # Template with {path}/{
 forbiddenAutoLinkPatterns: {forbiddenAutoLinkPatterns from Step 5}   # Regex list. Never emit text that matches these; use the safe replacements shown in the table.
 Intent: {one-line from Step 6}
 Change Type: {Step 6}
-Repo path: pr-review-worktree/{repo}/{prId}/worktree    # isolated git worktree checked out to the PR source branch. Read/search ALL source files from here -- it reflects the PR head and reading it never disturbs the user's live tree. Do NOT read source from the host repo root. This tree is NOT ignored, so `grep_search`, `file_search`, and `semantic_search` all reach it -- scope searches to it via `includePattern` set to this path (no `includeIgnoredFiles`). Search division: grep/file/semantic search here for discovery + cross-references; `read_file` here for a changed file's full content; the exact change set is pr-review/{repo}/{prId}/diff.txt (do NOT re-run `git diff`).
+Repo path: {worktreeInfo.worktree}    # absolute path returned by Step 3 setup -- forward verbatim, do NOT reconstruct from {repo}/{prId} (a -N suffix may be present). Use with `read_file` and any absolute-path tool call. Do NOT read source from the host repo root.
+Search glob: {worktreeInfo.searchGlob}    # workspace-relative POSIX glob returned by Step 3 setup -- forward verbatim, do NOT reconstruct. Use as `includePattern` for `grep_search`, `file_search`, and `semantic_search` (no `includeIgnoredFiles`). These two values must not be swapped: `includePattern` requires a workspace-relative glob, not an absolute path. This tree is NOT ignored, so searches reach it directly. Search division: grep/file/semantic search with this glob for discovery + cross-references; `read_file` with repo path for a changed file's full content; the exact change set is pr-review/{repo}/{prId}/diff.txt (do NOT re-run `git diff`).
 Target branch: {targetBranch}
 Changed files: see pr-review/{repo}/{prId}/diff.txt
 Anti-pattern groups to load: {list of file paths from Step 6 scan}
@@ -81,6 +84,6 @@ Each subagent returns a compact summary message. Main agent collects the 3 summa
 
 1. From the 3 summaries, extract Medium+ findings (severity tag >= Medium) (Severity dimension only — High/Medium in, Low/Nit out; Kind such as Bug does not change this threshold. See [tags.md](../tags.md).)
 2. IF none: skip to Step 8
-3. Dispatch **pr-finding-validator** with: `toolkit-root` + `repo` + `prId` from main agent (so it can locate `pr-review/{repo}/{prId}/sections/`), the Medium+ findings list (with the original URL links preserved), intent summary, `fileLinkTemplate + forbiddenAutoLinkPatterns` from Step 5, paths to `20-logic.md` / `30-impact.md` / `40-quality.md`
+3. Dispatch **pr-finding-validator** with: `toolkit-root` + `repo` + `prId` from main agent (so it can locate `pr-review/{repo}/{prId}/sections/`), the Medium+ findings list (with the original URL links preserved), intent summary, `fileLinkTemplate + forbiddenAutoLinkPatterns` from Step 5, paths to `20-logic.md` / `30-impact.md` / `40-quality.md`, the absolute worktree path from Step 3 (forward `worktreeInfo.worktree` verbatim, do NOT reconstruct from `{repo}/{prId}`, a `-N` suffix may be present), the search glob from Step 3 (forward `worktreeInfo.searchGlob` verbatim, do NOT reconstruct), and the diff-file path (`worktreeInfo.diffFile`)
 4. Validator writes `50-validation.md`; returns per-finding verdicts
 5. Apply verdicts to the in-context summaries per the validator's output -- `pr-finding-validator.md` §3 (Verdict) owns the semantics: upgrade where it upgraded; apply **refuted** downgrades where it resolved a determinable precondition (class i); keep genuinely-uncertain findings (class ii) elevated. Do NOT redefine verdict semantics in this dispatch.

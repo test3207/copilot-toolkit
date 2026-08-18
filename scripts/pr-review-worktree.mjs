@@ -29,13 +29,24 @@
 //   cleanup: node pr-review-worktree.mjs cleanup --repo-path <p> --repo <name> --pr-id <id>
 //
 // stdout (setup) = one JSON object:
-//   { worktree, outDir, diffFile, changedFiles, additions, deletions,
-//     submoduleBumps: [{ path, from, to, commits? }], enrichment: {...}, warnings: [] }
+//   { worktree, searchGlob, outDir, diffFile, changedFiles, additions, deletions,
+//     submoduleBumps: [{ path, from, to, commits? }], enrichment: {...}, warnings: [],
+//     orphans?: { count, paths } }
+// stdout (cleanup) = one JSON object:
+//   { removed: boolean, paths: string[],
+//     leaked?: [{ path, remainingFiles: number|null, error, markerError? }], errors?: [{ path, error }], hint?: string }
 // Exit: 0 = ok; 1 = usage/precondition error; 2 = git setup failure (worktree unavailable / fetch / add).
 
 import { execFileSync, execSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, rmdirSync, statSync, readdirSync } from 'node:fs';
+import { resolve, relative } from 'node:path';
+
+// Single source for the marker contract -- it is written, classified and swept from three different
+// places, and drift between them silently disables reclaim.
+const ORPHAN_MARKER = '.pr-review-orphan';
+const LEAF_NAME_RE = /^worktree(-\d+)?$/;
+const DELETE_RETRIES = 5;
+const DELETE_RETRY_MS = 200;
 
 function arg(flag, def) {
   const i = process.argv.indexOf(flag);
@@ -63,9 +74,8 @@ if (/[/\\]|\.\./.test(repo) || /[/\\]|\.\./.test(prId)) {
   fail(1, '--repo and --pr-id must not contain path separators or ".."');
 }
 
-// Absolute worktree path, resolved from the node process cwd (= workspace root). MUST be
-// absolute: `git -C {repoPath}` resolves relative paths against {repoPath}, not the workspace root.
-const worktree = resolve(process.cwd(), 'pr-review-worktree', repo, prId, 'worktree');
+// prDir is the per-PR container; the actual worktree leaf is allocated inside it by P1.
+const prDir = resolve(process.cwd(), 'pr-review-worktree', repo, prId);
 // Output artifacts live under the self-ignored pr-review/ tree (relative to workspace root).
 const outDir = resolve(process.cwd(), 'pr-review', repo, prId);
 const diffFile = resolve(outDir, 'diff.txt');
@@ -88,6 +98,94 @@ function gitAt(dir, args) {
       stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 1024 * 1024,
     }).toString() };
   } catch (e) { return { ok: false, out: (e.stdout || '').toString(), err: (e.stderr || e.message || '').toString() }; }
+}
+
+// 'live' | 'orphan' | 'unknown'. A linked worktree's .git is a file holding 'gitdir: <path>';
+// after worktree remove --force succeeds the admin dir is gone, so a surviving leaf reads orphan.
+// A leaf carrying .pr-review-orphan classifies orphan even when .git is absent (unknown state).
+function leafState(leafDir) {
+  const gitFile = resolve(leafDir, '.git');
+  const markerFile = resolve(leafDir, ORPHAN_MARKER);
+  let stat, content;
+  try { stat = statSync(gitFile); } catch { return existsSync(markerFile) ? 'orphan' : 'unknown'; }
+  if (!stat.isFile()) return existsSync(markerFile) ? 'orphan' : 'unknown';
+  try { content = readFileSync(gitFile, 'utf8'); } catch { return existsSync(markerFile) ? 'orphan' : 'unknown'; }
+  const m = content.match(/^gitdir:\s*(.+)/m);
+  if (!m) return existsSync(markerFile) ? 'orphan' : 'unknown';
+  const target = m[1].trim();
+  if (existsSync(resolve(leafDir, target))) return 'live';
+  // An MSYS-style "/c/..." target cannot be resolved here, and reading it as dead would let the sweep
+  // delete a LIVE worktree. Fall back to the marker, whose absence yields 'unknown' -- never deleted.
+  if (process.platform === 'win32' && /^\/[A-Za-z]\//.test(target)) return existsSync(markerFile) ? 'orphan' : 'unknown';
+  return 'orphan';
+}
+
+function retryDelete(dir) {
+  let lastErr = null;
+  try { rmSync(dir, { recursive: true, force: true, maxRetries: DELETE_RETRIES, retryDelay: DELETE_RETRY_MS }); }
+  catch (e) { lastErr = (e.message || String(e)).slice(0, 200); }
+  return lastErr;
+}
+
+// MUST be called from every path that fails to delete a leaf. A recursive delete removes the marker
+// before it throws on the held entry, so an unmarked survivor classifies unknown -- which the sweep
+// never matches and the report never lists, making the leak permanent and invisible.
+function markOrphan(leafDir) {
+  try {
+    writeFileSync(resolve(leafDir, ORPHAN_MARKER), 'This directory was not fully deleted by pr-review cleanup.\n');
+    return null;
+  } catch (e) {
+    return `marker write failed -- this leaf will not be auto-reclaimed: ${(e.message || String(e)).slice(0, 100)}`;
+  }
+}
+
+function scanLeaves(base) {
+  const leaves = [];
+  if (!existsSync(base)) return leaves;
+  let repoEntries;
+  try { repoEntries = readdirSync(base, { withFileTypes: true }); } catch { return leaves; }
+  for (const re of repoEntries) {
+    if (!re.isDirectory()) continue;
+    const repoDir = resolve(base, re.name);
+    let prEntries;
+    try { prEntries = readdirSync(repoDir, { withFileTypes: true }); } catch { continue; }
+    for (const pe of prEntries) {
+      if (!pe.isDirectory()) continue;
+      const pd = resolve(repoDir, pe.name);
+      let leafEntries;
+      try { leafEntries = readdirSync(pd, { withFileTypes: true }); } catch { continue; }
+      for (const le of leafEntries) {
+        if (le.isDirectory() && LEAF_NAME_RE.test(le.name)) leaves.push(resolve(pd, le.name));
+      }
+    }
+  }
+  return leaves;
+}
+
+function orphanSweep() {
+  const swept = [];
+  const remaining = [];
+  for (const p of scanLeaves(resolve(process.cwd(), 'pr-review-worktree'))) {
+    if (leafState(p) === 'orphan') {
+      retryDelete(p);
+      if (!existsSync(p)) swept.push(p);
+      else { markOrphan(p); remaining.push(p); }
+    }
+  }
+  return { swept, remaining };
+}
+
+function countFiles(dir) {
+  let files = 0;
+  const walk = (d) => {
+    const entries = readdirSync(d, { withFileTypes: true });
+    for (const e of entries) {
+      if (e.isDirectory()) { walk(resolve(d, e.name)); }
+      else { files++; }
+    }
+  };
+  try { walk(dir); } catch { return null; }
+  return files;
 }
 
 function readJson(p) {
@@ -124,19 +222,47 @@ function resolveWorktreeConfig() {
   return cfg;
 }
 
-function preClean() {
-  // Remove any stale registration AND leftover dir. Handles both interrupted-run states:
-  // registered-but-missing (=> add exit 128) and dir-present-but-registration-lost (=> "already exists").
-  if (existsSync(worktree)) {
-    gitTry(['worktree', 'remove', '--force', worktree]);
-    try { rmSync(worktree, { recursive: true, force: true }); } catch { /* best effort */ }
-  }
-  gitTry(['worktree', 'prune']);
-}
-
 if (command === 'cleanup') {
-  preClean();
-  console.log(JSON.stringify({ removed: worktree }));
+  const removedPaths = [];
+  const leakedEntries = [];
+  const errors = [];
+
+  if (existsSync(prDir)) {
+    let entries = [];
+    let enumErr = null;
+    try { entries = readdirSync(prDir, { withFileTypes: true }); } catch (e) { enumErr = (e.message || String(e)).slice(0, 200); }
+    if (enumErr) {
+      errors.push({ path: prDir, error: enumErr });
+    } else {
+      for (const e of entries.filter((x) => x.isDirectory() && LEAF_NAME_RE.test(x.name))) {
+        const leafDir = resolve(prDir, e.name);
+        gitTry(['worktree', 'remove', '--force', leafDir]);
+        try { rmSync(resolve(leafDir, '.git'), { force: true }); } catch { /* best effort */ }
+        const deleteErr = retryDelete(leafDir);
+        if (!existsSync(leafDir)) {
+          removedPaths.push(leafDir);
+        } else {
+          const entry = { path: leafDir, remainingFiles: countFiles(leafDir), error: deleteErr || 'directory still exists after delete (cause unknown)' };
+          const markerErr = markOrphan(leafDir);
+          if (markerErr) entry.markerError = markerErr;
+          leakedEntries.push(entry);
+        }
+      }
+    }
+  }
+
+  gitTry(['worktree', 'prune', '--expire=now']);
+  try { rmdirSync(prDir); } catch { /* non-empty ok */ }
+  try { rmdirSync(resolve(process.cwd(), 'pr-review-worktree', repo)); } catch { /* non-empty ok */ }
+
+  const removed = leakedEntries.length === 0 && errors.length === 0;
+  const out = { removed, paths: removedPaths };
+  if (leakedEntries.length > 0) out.leaked = leakedEntries;
+  if (errors.length > 0) out.errors = errors;
+  if (!removed) {
+    out.hint = 'One or more worktree directories are still on disk -- restart the editor to release held handles so a later setup can reclaim the path.';
+  }
+  console.log(JSON.stringify(out));
   process.exit(0);
 }
 
@@ -157,9 +283,47 @@ if (!gitTry(['worktree', 'list']).ok) {
 // Scaffold the self-ignored OUTPUT tree (diff.txt etc. land here regardless of provider overrides).
 mkdirSync(outDir, { recursive: true });
 writeFileSync(resolve(process.cwd(), 'pr-review', '.gitignore'), '*\n');
-mkdirSync(resolve(process.cwd(), 'pr-review-worktree', repo, prId), { recursive: true });
+mkdirSync(prDir, { recursive: true });
 
-preClean();
+// P4: sweep orphan leaves across all repos before allocating a path
+const { swept, remaining: sweepRemaining } = orphanSweep();
+for (const p of swept) warnings.push(`orphan sweep deleted: ${p}`);
+
+// P1: allocate a worktree path; candidates worktree, worktree-2, ... worktree-<MAX_LEAF_CANDIDATES>
+const MAX_LEAF_CANDIDATES = 10;
+const leafCandidates = Array.from({ length: MAX_LEAF_CANDIDATES }, (_, i) => (i === 0 ? 'worktree' : `worktree-${i + 1}`));
+let worktree = null;
+const blockedCandidates = [];
+for (const name of leafCandidates) {
+  const candidate = resolve(prDir, name);
+  if (!existsSync(candidate)) { worktree = candidate; break; }
+  // Unconditional reclaim: an aborted prior run leaves a live registration at the primary path;
+  // skipping it would strand the checkout and burn a slot on every subsequent run.
+  gitTry(['worktree', 'remove', '--force', candidate]);
+  // Same .git-first order as cleanup, so a survivor is never left classifying live with an inert marker.
+  try { rmSync(resolve(candidate, '.git'), { force: true }); } catch { /* best effort */ }
+  const candidateErr = retryDelete(candidate);
+  if (!existsSync(candidate)) { worktree = candidate; break; }
+  markOrphan(candidate);
+  blockedCandidates.push({ path: candidate, error: candidateErr || 'directory still exists after delete (cause unknown)' });
+}
+if (!worktree) {
+  fail(2, `all ${MAX_LEAF_CANDIDATES} worktree paths are occupied -- editor handles still held; restart the editor and retry: ${leafCandidates.map((n) => resolve(prDir, n)).join(', ')}`);
+}
+
+// Workspace-relative POSIX glob for includePattern (an absolute path there matches nothing).
+const searchGlob = relative(process.cwd(), worktree).replace(/\\/g, '/') + '/**';
+
+// Every leaf a delete failed on, from the sweep and from allocation alike -- all are marked, so all
+// are reclaimable and all must be reported, each with the error that blocked it.
+const residualByPath = new Map();
+for (const p of sweepRemaining) residualByPath.set(p, { path: p, error: 'orphan sweep could not delete this leaf' });
+for (const b of blockedCandidates) residualByPath.set(b.path, b);
+const residualLeaves = [...residualByPath.values()].filter((r) => existsSync(r.path));
+if (residualLeaves.length > 0) {
+  warnings.push(`${residualLeaves.length} worktree ${residualLeaves.length === 1 ? 'leaf is' : 'leaves are'} still on disk and visible to git and search -- restart the editor to release held handles; for the same PR a later setup reclaims the path, for other repos or PR ids the orphan sweep reclaims the path once handles are released`);
+}
+gitTry(['worktree', 'prune', '--expire=now']);
 
 // Fetch both refs. Source fetch is fatal (can't build the worktree); target fetch is a warning
 // (diff base may be stale -- B-031 -- but the worktree still builds).
@@ -176,7 +340,14 @@ if (!fetchTarget.ok) {
 // so detaching keeps the user's own checkout of the same branch collision-free.
 const add = gitTry(['worktree', 'add', '--detach', worktree, `origin/${source}`]);
 if (!add.ok) {
-  fail(2, `git worktree add failed -- on Windows a MAX_PATH error needs core.longpaths=true: ${add.err.trim()}`);
+  const addErr = add.err.trim();
+  let addHint = '';
+  if (/already exists|already registered/i.test(addErr)) {
+    addHint = ' -- the path is occupied or still registered and setup could not reclaim it; close the editor holding it and retry';
+  } else if (/filename too long|max_path|longpaths/i.test(addErr)) {
+    addHint = ' -- on Windows a MAX_PATH error needs core.longpaths=true';
+  }
+  fail(2, `git worktree add failed${addHint}: ${addErr}`);
 }
 
 // ---- Enrichment (opt-in, TRUSTED repos only; failures degrade, never block) ----
@@ -255,6 +426,7 @@ if (cfg.submodules !== 'false' && enrichment.submoduleUpdate === 'ok') {
 
 console.log(JSON.stringify({
   worktree,
+  searchGlob,
   outDir,
   diffFile,
   changedFiles: changedList.length,
@@ -263,4 +435,5 @@ console.log(JSON.stringify({
   submoduleBumps,
   enrichment,
   warnings,
+  ...(residualLeaves.length > 0 ? { orphans: { count: residualLeaves.length, paths: residualLeaves } } : {}),
 }));

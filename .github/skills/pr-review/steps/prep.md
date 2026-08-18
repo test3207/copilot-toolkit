@@ -26,7 +26,7 @@ Run the **getThreads** recipe from `providers/{pr-platform}.md`. Filter out bot/
 
 Instead of checking the PR branch out in the shared working tree (which fights concurrent reviews and disturbs the user's own checkout), create a dedicated git worktree per review. Two reviews of different PRs run in parallel because each gets its own detached HEAD; the user's working tree is never touched.
 
-`scripts/pr-review-worktree.mjs` does all the deterministic git glue in one Node run (the "recipe glue = Node script" rule -- no inline multi-step shell): probe worktree availability, scaffold the self-ignored output tree, pre-clean/prune any interrupted prior run, fetch source + target, add the detached worktree, run optional enrichment, then compute the diff + submodule-bump summary. Every git call runs against `{repoContext.path}` via `git -C`, so it works whether the reviewed repo is the workspace root (`path: "."`, plugin mode) or a git submodule (`path: "repos/<name>"`, L2 mode).
+`scripts/pr-review-worktree.mjs` does all the deterministic git glue in one Node run (the "recipe glue = Node script" rule -- no inline multi-step shell): probe worktree availability, scaffold the self-ignored output tree, run a cross-repo orphan sweep (deletes orphan leaves under ALL repos' review dirs, not only the current `--repo`/`--pr-id`), allocate a candidate worktree path (`worktree`, `worktree-2`, ..., `worktree-10`), fetch source + target, add the detached worktree, run optional enrichment, then compute the diff + submodule-bump summary. It also runs `git worktree prune --expire=now` against the reviewed repo, which drops git's default three-month grace: a registration whose directory is temporarily unavailable is deregistered rather than kept. The lost metadata is recoverable with `git worktree repair`. Every git call runs against `{repoContext.path}` via `git -C`, so it works whether the reviewed repo is the workspace root (`path: "."`, plugin mode) or a git submodule (`path: "repos/<name>"`, L2 mode).
 
 **Enrichment config (optional)**: the script reads the reviewed repo's own `.github/pr-review.json` `worktree` block (L3, from the base checkout) automatically. If instead the registry entry carries a `worktree` block (L2), write it to a JSON file with `create_file` (e.g. `pr-review/{repo}/{prId}/worktree-config.json`) and pass `--config <that path>` -- L3 still overrides L2 if both exist. If the registry has no `worktree` block, omit `--config`. See `providers/_index.md` → *Worktree enrichment config precedence*.
 
@@ -40,18 +40,20 @@ The script prints ONE JSON object to stdout -- capture it as `worktreeInfo`:
 
 | Field | Use |
 | ----- | --- |
-| `worktree` | Absolute path of the searchable worktree (`pr-review-worktree/{repo}/{prId}/worktree`, NOT ignored). Subagents grep/read here. |
+| `worktree` | Absolute path of the searchable worktree (NOT ignored). Typically `pr-review-worktree/{repo}/{prId}/worktree`; may carry a `-N` suffix when the primary path was occupied by a locked leftover. Forward this value verbatim to subagents -- do NOT reconstruct from `{repo}/{prId}`. |
+| `searchGlob` | Workspace-relative POSIX glob for the allocated leaf, e.g. `pr-review-worktree/{repo}/{prId}/worktree-2/**`. Use as `includePattern` for `grep_search`, `file_search`, and `semantic_search`. Forward verbatim -- do NOT reconstruct. `read_file` and absolute-path tool calls use `worktree`, not this field; the two must not be swapped. |
+| `orphans` | `{ count, paths }` -- present only when leaves the run could not delete are still on disk. Covers BOTH the orphan-state leaves that survived the cross-repo sweep AND the candidate paths the allocation loop could not clear (which may classify `live` or `unknown`). `paths` carries each one with the filesystem `error` that blocked it. A matching warning is in `warnings[]`. Leftovers are still on disk and visible to git and search; restart the editor to release held handles so a later setup can reclaim them. |
 | `outDir` | `pr-review/{repo}/{prId}` (self-ignored) -- holds `diff.txt`, `changed-files.txt`, sections. |
 | `diffFile` | Full-patch path for Step 7 subagents. |
 | `changedFiles` / `additions` / `deletions` | Change-size signal for Step 4. |
 | `submoduleBumps` | `[{ path, from, to, commits? }]` gitlink pointer bumps (empty for most PRs; `commits` present only when submodule enrichment resolved the range). |
 | `enrichment` | `{ submodules, configSource, submoduleUpdate, setup, hint? }` -- what the opt-in enrichment did. If `hint` is present (plugin mode, nothing configured), surface it ONCE, non-blocking. |
-| `warnings` | Non-fatal notes (stale target fetch B-031, degraded enrichment) -- surface to the user. |
+| `warnings` | Non-fatal notes -- surface to the user. One entry per swept orphan leaf, one for surviving leftovers, plus the stale-target-fetch (B-031) and degraded-enrichment cases. |
 
 Exit codes: `0` = ok; `1` = bad arguments; `2` = git setup failure (worktree unavailable / source fetch / add) -- on non-zero STOP and surface the JSON `error` field.
 
 > The worktree lives at a NON-ignored, in-workspace path so VS Code grep / file / semantic search reach it directly (search cannot see system-temp or ignored files). Review OUTPUT artifacts stay under the self-ignored `pr-review/` tree. The worktree is removed in Step 9.3.
-> Isolation is guaranteed across DIFFERENT PRs (distinct `{prId}` -> distinct worktree path). Reviewing the SAME PR twice in one workspace is out of scope -- the pre-clean assumes at most one live worktree per PR, so a second concurrent run of the same PR would drop the first's worktree.
+> Isolation is guaranteed for LIVE trees across DIFFERENT PRs (distinct `{prId}` -> distinct worktree path). Note: a setup for one repo can delete `orphan`-state leaves under another repo's review directory (the cross-repo sweep does this intentionally). Same-PR SEQUENTIAL re-review is supported: a `live` leftover from an aborted prior run is reclaimed unconditionally by the candidate allocation loop; an `orphan` leftover is reclaimed by the pre-setup orphan sweep; an `unknown` leftover (no `.git` and no orphan marker) is reclaimed by the allocation loop's force-remove if that succeeds, otherwise bumped to `worktree-N`. Same-PR PARALLEL review remains out of scope: two concurrent setups for the same PR would race over the same candidate paths.
 
 ## Step 4: Get Changed Files
 
