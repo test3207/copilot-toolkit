@@ -81,12 +81,13 @@ Load the matching workflow file for the exact phase list; mirror it into the tod
 The pre-confirm explorers stop the main agent from patching the symptom layer. The post-confirm implementer stops the main agent's context from filling with file reads / multi-edit hunks / build output once design is frozen. PR creation, commit message, and tracked-item updates stay with the main agent.
 
 **Post-implement closure validation is mandatory too, but it is NOT in the table
-above** — its trigger is `work-implementer` returning `status: complete` or
-`status: partial`, not a file-write call. Once the implementer reports done,
+above** — its trigger is `work-implementer` returning `overall: complete` or
+`overall: partial`, not a file-write call. Once the implementer reports done,
 dispatch
 `work-closure-direction-validator` and `work-closure-detail-validator` in a single
 parallel block before acknowledging to the user. Contract, inputs, and the
-auto-bounce / surface-to-user gate live in [shared.md](./shared.md) (Implement §3).
+auto-bounce / surface-to-user gate live in
+[closure-validation.md](./closure-validation.md).
 
 ### Classification is sticky
 
@@ -119,5 +120,6 @@ user with reason.
 - [feature.md](./feature.md) — Feature workflow: Understand → Analyze & Design → [Review Confirm].
 - [bugfix.md](./bugfix.md) — Bug workflow: Gather → RCA → [Confirm RCA] → Fix Design → [Confirm Fix].
 - [shared.md](./shared.md) — Feature Gating Decision → spec template → Implement dispatch → Test → PR.
+- [closure-validation.md](./closure-validation.md) — post-implement closure validation: dispatch inputs, section-file reads, auto-bounce / surface-to-user gate.
 - [providers/_index.md](./providers/_index.md) — issue-tracker provider contract (8 ops + registry shape + incident-source plugin slot).
 - [anti-patterns/design.md](./anti-patterns/design.md) — design anti-patterns (DAP-01..08); subagent-loaded only, main agent never reads.

@@ -83,87 +83,25 @@ files, edits, builds, runs UTs, audits DAP-07/08, and returns a compact summary.
 
 ### 3. Review the returned summary
 
-- IF `status: blocked` -> resolve the cited question (read the cited file range
+The implementer reports its outcome in an `overall:` field.
+
+- IF `overall: blocked` -> resolve the cited question (read the cited file range
   yourself, or ask user) then re-dispatch with an updated spec. Do NOT escalate
   to "I'll write the code myself" — that defeats the context-isolation gain.
-- IF `status: partial` -> treat it as `complete` FOR CLOSURE PURPOSES: run the
-  mandatory closure validation below against what was actually done. Then always
-  **Surface to user** — present the validator findings together with the
-  remainder the implementer did not finish. Never auto-bounce a `partial`; the
-  unfinished remainder is a user decision, not a validator finding.
-- IF `status: complete` -> **MANDATORY: closure validation before user
-  acknowledgement.** In a **single parallel `runSubagent` block**, dispatch
-  `work-closure-direction-validator` AND `work-closure-detail-validator` with
-  inputs:
-  - `toolkit-root`: same value passed to implementer
-  - `repo-path`: same value passed to implementer. Bounds every search the
-    validators run; without it they grep the whole workspace and report hits in
-    sibling repos as missed edits.
-  - `extra-scopes` (optional): additional workspace-relative paths that ARE in
-    scope, for a change that deliberately spans repos — e.g. a file moved from
-    one repo to another, where the old location is the thing worth checking.
-    Omit for a single-repo change; omitting it keeps the search inside
-    `repo-path`.
-  - `outputDir`: `tmp/work/<item-id>/`
-  - `request`: the original user request that led to this work item.
-    When the request contains a universal claim (`every X is …`, `all Y are
-    …`, `no Z does …`), spell out the SCOPE of that claim — which files /
-    which subsystem the claim covers — so the validator doesn't generalize
-    it across the whole repo (e.g. "every `v1.x.y` literal in the tree is
-    fictional" must say "only in `install/`, `scripts/`, `INSTALL.md`,
-    `README.md`" if other dirs intentionally carry their own version
-    literals).
-  - `implementerSummary`: the verbatim summary just returned
-  - `changedPaths`: file list from the implementer summary's "Files Modified" table
-  - `oldForms` (detail validator only; optional but strongly recommended): copy
-    the **Old form replaced** column from the spec's Touch Points. `changedPaths`
-    carries only final-state paths, so without this the detail validator has to
-    guess what was renamed — and a rename it never identifies produces zero
-    checks that read as a clean result. The direction validator does not take
-    this input; it runs no mandatory checks.
-    Why the caller supplies this instead of the validators deriving it from a
-    diff: both hold `read` / `search` only, by design — no `execute`, so no git
-    history — and a diff would show a changed file without surfacing a renamed
-    symbol or a relocated version literal anyway.
-  - `scope`: `all-changes-since-handoff`
+- IF `overall: partial` -> closure validation still fires, against what was
+  actually done. Afterwards always **Surface to user**: present the validator
+  findings together with the remainder the implementer did not finish. Never
+  auto-bounce a `partial`; the unfinished remainder is a user decision, not a
+  validator finding.
+- IF `overall: complete` -> closure validation fires.
 
-  Then read both compact response summaries. The summaries carry COUNTS ONLY —
-  they cannot tell you which finding to act on. **Read a validator's section file
-  whenever its summary reports `Findings` > 0, OR any deliberate retention, OR
-  any subject it had to infer rather than being given.** The first is obvious;
-  the other two are the cases where the summary looks clean but rests on a
-  judgment the validator never showed you — a retention it decided was
-  intentional, or a subject it guessed at because no `oldForms` arrived.
-  Applying the gate per finding requires that finding's `confidence`, `impact`,
-  and one-line description, and none of those are in the summary.
-  Then apply the gate per finding:
-  - **Auto-bounce**: finding has `confidence=high AND impact=low`. Re-dispatch
-    `work-implementer` with the finding appended to the spec's Notes section.
-    Never applies when the implementer returned `status: partial` — that branch
-    forbids auto-bounce outright, whatever the confidence and impact.
-  - **Surface to user** (stop): every other combination. Present the implementer
-    summary
-    AND the validator findings (counts per severity per validator + brief
-    one-line description per finding, with paths to the full section files at
-    `tmp/work/<item-id>/50-direction.md` and `51-detail.md`). Wait for the
-    user's response before doing anything else.
+**MANDATORY: closure validation before user acknowledgement.** Read
+[closure-validation.md](./closure-validation.md) and follow it — it owns the
+dispatch inputs, which section files to read, the auto-bounce / surface-to-user
+gate, and the bound on auto-bounce rounds.
 
-  Auto-bounce is bounded. Closure validation re-runs after each bounce, so
-  without a cap a validator and an implementer that disagree will loop:
-  - Record each bounce where it survives. A bounce already appends its finding to
-    the spec's Notes section; prefix that entry `auto-bounce round N:`. The
-    section files are fixed-path and each round overwrites the last, so they
-    cannot carry this history, and conversation state is exactly what a long
-    disagree-loop session loses.
-  - At most **2** auto-bounce rounds per work item, counted from those Notes
-    entries. On the 3rd, stop and Surface to user regardless of confidence and
-    impact.
-  - Never auto-bounce the same finding twice. If a Notes entry already records
-    substantially the same finding, it is no longer auto-bounceable — Surface to
-    user with both the Notes entry and the new report.
-
-  Self-check: if your next planned action after implementer returns is anything
-  other than the parallel validator dispatch above, **STOP** and dispatch.
+Self-check: if your next planned action after the implementer returns is anything
+other than the parallel validator dispatch, **STOP** and dispatch.
 
 ---
 
