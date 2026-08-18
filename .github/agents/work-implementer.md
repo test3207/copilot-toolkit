@@ -79,6 +79,6 @@ PASS / N/A / FAIL (details)
 #### Suggested Manual Test Cases
 | Case | Steps | Expected |
 
-#### Blocked? (only if status != complete)
+#### Blocked? (only if overall != complete)
 - Question or failure that needs main agent / user decision
 ```

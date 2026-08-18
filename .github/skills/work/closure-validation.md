@@ -61,10 +61,14 @@ act on. Applying the gate per finding requires that finding's `confidence`,
 
 ## The gate, per finding
 
-- **Auto-bounce**: finding has `confidence=high AND impact=low`. Re-dispatch
-  `work-implementer` with the finding appended to the spec's Notes section. Never
-  applies when the implementer returned `overall: partial` — that branch forbids
-  auto-bounce outright, whatever the confidence and impact.
+- **Auto-bounce**: finding has `confidence=high AND impact=low` AND its verdict is
+  not `unverifiable`. Re-dispatch `work-implementer` with the finding appended to
+  the spec's Notes section. Two exclusions: it never applies when the implementer
+  returned `overall: partial` (that branch forbids auto-bounce outright, whatever
+  the confidence and impact), and it never applies to an `unverifiable` finding —
+  that verdict means the validator could not check something, which only you can
+  fix by re-dispatching it with `oldForms` or `extra-scopes`. Sending it to the
+  implementer wastes a bounce round on a party who cannot act on it.
 - **Surface to user** (stop): every other combination. Present the implementer
   summary AND the validator findings (counts per severity per validator + brief
   one-line description per finding, with paths to the full section files at
@@ -81,9 +85,10 @@ implementer that disagree will loop:
   files are fixed-path and each round overwrites the last, so they cannot carry
   this history, and conversation state is exactly what a long disagree-loop
   session loses.
-- At most **2** auto-bounce rounds per work item, counted from those Notes
-  entries. On the 3rd, stop and Surface to user regardless of confidence and
-  impact.
+- Before auto-bouncing anything, read the spec's Notes section and count the
+  existing `auto-bounce round N:` entries. That count, not your memory of this
+  session, is the authority. At most **2** rounds per work item; on the 3rd, stop
+  and Surface to user regardless of confidence and impact.
 - Never auto-bounce the same finding twice. If a Notes entry already records
   substantially the same finding, it is no longer auto-bounceable — Surface to
   user with both the Notes entry and the new report.

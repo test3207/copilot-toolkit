@@ -95,12 +95,14 @@ The implementer reports its outcome in an `overall:` field.
   validator finding.
 - IF `overall: complete` -> closure validation fires.
 
-**MANDATORY: closure validation before user acknowledgement.** Read
-[closure-validation.md](./closure-validation.md) and follow it — it owns the
-dispatch inputs, which section files to read, the auto-bounce / surface-to-user
-gate, and the bound on auto-bounce rounds.
+**On `complete` and on `partial` only — MANDATORY: closure validation before user
+acknowledgement.** Read [closure-validation.md](./closure-validation.md) and
+follow it; it owns the dispatch inputs, which section files to read, the
+auto-bounce / surface-to-user gate, and the bound on auto-bounce rounds. The
+`blocked` branch does not trigger closure validation — there is nothing finished
+to validate; resolve the question and re-dispatch the implementer instead.
 
-Self-check: if your next planned action after the implementer returns is anything
+Self-check, on those same two branches: if your next planned action is anything
 other than reading [closure-validation.md](./closure-validation.md) and
 dispatching both validators, **STOP** and do that. Firing the dispatch from
 memory without opening the contract loses `repo-path`, `extra-scopes`, and
