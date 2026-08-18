@@ -31,10 +31,10 @@
 // stdout (setup) = one JSON object:
 //   { worktree, outDir, diffFile, changedFiles, additions, deletions,
 //     submoduleBumps: [{ path, from, to, commits? }], enrichment: {...}, warnings: [],
-//     orphans?: { count, files, bytes } }
+//     orphans?: { count, files } }
 // stdout (cleanup) = one JSON object:
 //   { removed: boolean, paths: string[],
-//     leaked?: [{ path, remainingFiles, error }], hint?: string }
+//     leaked?: [{ path, remainingFiles, error }], errors?: [{ path, error }], hint?: string }
 // Exit: 0 = ok; 1 = usage/precondition error; 2 = git setup failure (worktree unavailable / fetch / add).
 
 import { execFileSync, execSync } from 'node:child_process';
@@ -95,19 +95,24 @@ function gitAt(dir, args) {
 
 // 'live' | 'orphan' | 'unknown'. A linked worktree's .git is a file holding 'gitdir: <path>';
 // after worktree remove --force succeeds the admin dir is gone, so a surviving leaf reads orphan.
+// A leaf carrying .pr-review-orphan classifies orphan even when .git is absent (unknown state).
 function leafState(leafDir) {
   const gitFile = resolve(leafDir, '.git');
+  const markerFile = resolve(leafDir, '.pr-review-orphan');
   let stat, content;
-  try { stat = statSync(gitFile); } catch { return 'unknown'; }
-  if (!stat.isFile()) return 'unknown';
-  try { content = readFileSync(gitFile, 'utf8'); } catch { return 'unknown'; }
+  try { stat = statSync(gitFile); } catch { return existsSync(markerFile) ? 'orphan' : 'unknown'; }
+  if (!stat.isFile()) return existsSync(markerFile) ? 'orphan' : 'unknown';
+  try { content = readFileSync(gitFile, 'utf8'); } catch { return existsSync(markerFile) ? 'orphan' : 'unknown'; }
   const m = content.match(/^gitdir:\s*(.+)/m);
-  if (!m) return 'unknown';
+  if (!m) return existsSync(markerFile) ? 'orphan' : 'unknown';
   return existsSync(resolve(leafDir, m[1].trim())) ? 'live' : 'orphan';
 }
 
 function retryDelete(dir) {
-  try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort */ }
+  let lastErr = null;
+  try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); }
+  catch (e) { lastErr = (e.message || String(e)).slice(0, 200); }
+  return lastErr;
 }
 
 function scanLeaves(base) {
@@ -134,24 +139,28 @@ function scanLeaves(base) {
 }
 
 function orphanSweep() {
+  const swept = [];
   for (const p of scanLeaves(resolve(process.cwd(), 'pr-review-worktree'))) {
-    if (leafState(p) === 'orphan') retryDelete(p);
+    if (leafState(p) === 'orphan') {
+      retryDelete(p);
+      if (!existsSync(p)) swept.push(p);
+    }
   }
+  return swept;
 }
 
 function countFilesAndBytes(dir) {
-  let files = 0, bytes = 0;
+  let files = 0;
   const walk = (d) => {
     let entries;
     try { entries = readdirSync(d, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
-      const full = resolve(d, e.name);
-      if (e.isDirectory()) { walk(full); }
-      else { files++; try { bytes += statSync(full).size; } catch { /* ok */ } }
+      if (e.isDirectory()) { walk(resolve(d, e.name)); }
+      else { files++; }
     }
   };
   walk(dir);
-  return { files, bytes };
+  return { files };
 }
 
 function readJson(p) {
@@ -191,23 +200,25 @@ function resolveWorktreeConfig() {
 if (command === 'cleanup') {
   const removedPaths = [];
   const leakedEntries = [];
+  const errors = [];
 
   if (existsSync(prDir)) {
     let entries = [];
     let enumErr = null;
     try { entries = readdirSync(prDir, { withFileTypes: true }); } catch (e) { enumErr = (e.message || String(e)).slice(0, 200); }
     if (enumErr) {
-      leakedEntries.push({ path: prDir, remainingFiles: -1, error: enumErr });
+      errors.push({ path: prDir, error: enumErr });
     } else {
       for (const e of entries.filter((x) => x.isDirectory() && /^worktree(-\d+)?$/.test(x.name))) {
         const leafDir = resolve(prDir, e.name);
         gitTry(['worktree', 'remove', '--force', leafDir]);
-        retryDelete(leafDir);
+        const deleteErr = retryDelete(leafDir);
         if (!existsSync(leafDir)) {
           removedPaths.push(leafDir);
         } else {
+          try { writeFileSync(resolve(leafDir, '.pr-review-orphan'), 'This directory was not fully deleted by pr-review cleanup.\n'); } catch { /* best effort */ }
           const { files } = countFilesAndBytes(leafDir);
-          leakedEntries.push({ path: leafDir, remainingFiles: files, error: 'directory still held by editor or language service' });
+          leakedEntries.push({ path: leafDir, remainingFiles: files, error: deleteErr || 'directory still exists after delete (cause unknown)' });
         }
       }
     }
@@ -217,10 +228,11 @@ if (command === 'cleanup') {
   try { rmdirSync(prDir); } catch { /* non-empty ok */ }
   try { rmdirSync(resolve(process.cwd(), 'pr-review-worktree', repo)); } catch { /* non-empty ok */ }
 
-  const removed = leakedEntries.length === 0;
+  const removed = leakedEntries.length === 0 && errors.length === 0;
   const out = { removed, paths: removedPaths };
+  if (leakedEntries.length > 0) out.leaked = leakedEntries;
+  if (errors.length > 0) out.errors = errors;
   if (!removed) {
-    out.leaked = leakedEntries;
     out.hint = 'One or more worktree directories are still on disk -- restart the editor to release held handles so a later setup can reclaim the path.';
   }
   console.log(JSON.stringify(out));
@@ -247,7 +259,8 @@ writeFileSync(resolve(process.cwd(), 'pr-review', '.gitignore'), '*\n');
 mkdirSync(prDir, { recursive: true });
 
 // P4: sweep orphan leaves across all repos before allocating a path
-orphanSweep();
+const swept = orphanSweep();
+for (const p of swept) warnings.push(`orphan sweep deleted: ${p}`);
 
 // P1: allocate a worktree path; candidates worktree, worktree-2, ... worktree-10
 const leafCandidates = ['worktree', 'worktree-2', 'worktree-3', 'worktree-4', 'worktree-5',
@@ -256,6 +269,7 @@ let worktree = null;
 for (const name of leafCandidates) {
   const candidate = resolve(prDir, name);
   if (!existsSync(candidate)) { worktree = candidate; break; }
+  if (leafState(candidate) === 'live') continue;
   gitTry(['worktree', 'remove', '--force', candidate]);
   retryDelete(candidate);
   if (!existsSync(candidate)) { worktree = candidate; break; }
@@ -265,14 +279,11 @@ if (!worktree) {
 }
 
 // Counted AFTER allocation so a leaf the loop just reclaimed is not reported as still leaking.
-// Reporting is deliberately wider than the sweep's delete predicate: every non-live leaf, since
-// reporting cannot destroy anything.
-const residualLeaves = scanLeaves(resolve(process.cwd(), 'pr-review-worktree')).filter((p) => leafState(p) !== 'live');
-let orphanTotalFiles = 0, orphanTotalBytes = 0;
+const residualLeaves = scanLeaves(resolve(process.cwd(), 'pr-review-worktree')).filter((p) => leafState(p) === 'orphan');
+let orphanTotalFiles = 0;
 for (const p of residualLeaves) {
-  const { files, bytes } = countFilesAndBytes(p);
+  const { files } = countFilesAndBytes(p);
   orphanTotalFiles += files;
-  orphanTotalBytes += bytes;
 }
 if (residualLeaves.length > 0) {
   warnings.push(`${residualLeaves.length} worktree ${residualLeaves.length === 1 ? 'leaf is' : 'leaves are'} still on disk and visible to git and search -- restart the editor to release held handles; a later setup for the same PR reclaims the path`);
@@ -296,12 +307,10 @@ const add = gitTry(['worktree', 'add', '--detach', worktree, `origin/${source}`]
 if (!add.ok) {
   const addErr = add.err.trim();
   let addHint = '';
-  if (/already registered/i.test(addErr)) {
+  if (/already exists|already registered/i.test(addErr)) {
     addHint = ' -- the path is still registered in git; run `git worktree prune` and retry';
   } else if (/filename too long|max_path|longpaths/i.test(addErr)) {
     addHint = ' -- on Windows a MAX_PATH error needs core.longpaths=true';
-  } else {
-    addHint = ' -- check the error above and address the cause before retrying';
   }
   fail(2, `git worktree add failed${addHint}: ${addErr}`);
 }
@@ -390,5 +399,5 @@ console.log(JSON.stringify({
   submoduleBumps,
   enrichment,
   warnings,
-  ...(residualLeaves.length > 0 ? { orphans: { count: residualLeaves.length, files: orphanTotalFiles, bytes: orphanTotalBytes } } : {}),
+  ...(residualLeaves.length > 0 ? { orphans: { count: residualLeaves.length, files: orphanTotalFiles } } : {}),
 }));

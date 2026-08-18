@@ -41,7 +41,7 @@ The script prints ONE JSON object to stdout -- capture it as `worktreeInfo`:
 | Field | Use |
 | ----- | --- |
 | `worktree` | Absolute path of the searchable worktree (NOT ignored). Typically `pr-review-worktree/{repo}/{prId}/worktree`; may carry a `-N` suffix when the primary path was occupied by a locked leftover. Forward this value verbatim to subagents -- do NOT reconstruct from `{repo}/{prId}`. |
-| `orphans` | `{ count, files, bytes }` -- present only when leaves that could not be deleted survived the sweep. `count` covers all non-live leaves (orphan + unknown state). A matching warning is in `warnings[]`. Leftovers are still on disk and visible to git and search; restart the editor to release held handles so a later setup for the same PR reclaims the path. |
+| `orphans` | `{ count, files }` -- present only when orphan-state leaves survived the sweep. `count` covers only orphan-state leaves. A matching warning is in `warnings[]`. Leftovers are still on disk and visible to git and search; restart the editor to release held handles so a later setup for the same PR reclaims the path. |
 | `outDir` | `pr-review/{repo}/{prId}` (self-ignored) -- holds `diff.txt`, `changed-files.txt`, sections. |
 | `diffFile` | Full-patch path for Step 7 subagents. |
 | `changedFiles` / `additions` / `deletions` | Change-size signal for Step 4. |
