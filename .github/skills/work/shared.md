@@ -51,9 +51,9 @@ Template (~25 lines):
 - Scenario: new | reuse | retire
 
 ## Touch Points
-| # | File | Change | Constraints / Reuse |
-| - | ---- | ------ | ------------------- |
-| 1 | `<path>` | <concrete change> | use existing X at `<file#line>`; do NOT duplicate Y |
+| # | File | Change | Old form replaced | Constraints / Reuse |
+| - | ---- | ------ | ----------------- | ------------------- |
+| 1 | `<path>` | <concrete change> | `<old name / path / version literal>` -> `<new>`, or `-` | use existing X at `<file#line>`; do NOT duplicate Y |
 
 ## Boundary Literals (DAP-08, only if external-contract literals appear)
 | Literal | Source citation (telemetry / sibling-handler / service-source / user-pasted) |
@@ -67,6 +67,12 @@ Template (~25 lines):
 ## Notes
 <anything implementer needs to know>
 ```
+
+Fill **Old form replaced** while writing the spec, not later. It is the source of
+the `oldForms` input that closure validation needs in step 3, and at spec time the
+old-to-new pair is the substance of what you are describing. Reconstructed from
+memory at dispatch time it gets forgotten, and a rename nobody names is a rename
+the detail validator never checks.
 
 ### 2. Dispatch `work-implementer`
 
@@ -109,21 +115,32 @@ files, edits, builds, runs UTs, audits DAP-07/08, and returns a compact summary.
     literals).
   - `implementerSummary`: the verbatim summary just returned
   - `changedPaths`: file list from the implementer summary's "Files Modified" table
-  - `oldForms` (optional but strongly recommended): the OLD names / paths /
-    version literals this change replaced, with their new counterparts, taken
-    from the spec's Touch Points. `changedPaths` carries only final-state paths,
-    so without this the detail validator has to guess what was renamed — and a
-    rename it never identifies produces zero checks that read as a clean result.
+  - `oldForms` (detail validator only; optional but strongly recommended): copy
+    the **Old form replaced** column from the spec's Touch Points. `changedPaths`
+    carries only final-state paths, so without this the detail validator has to
+    guess what was renamed — and a rename it never identifies produces zero
+    checks that read as a clean result. The direction validator does not take
+    this input; it runs no mandatory checks.
+    Why the caller supplies this instead of the validators deriving it from a
+    diff: both hold `read` / `search` only, by design — no `execute`, so no git
+    history — and a diff would show a changed file without surfacing a renamed
+    symbol or a relocated version literal anyway.
   - `scope`: `all-changes-since-handoff`
 
   Then read both compact response summaries. The summaries carry COUNTS ONLY —
-  they cannot tell you which finding to act on. **For each validator whose
-  summary reports `Findings` > 0, read its section file before applying the
-  gate.** Applying the gate per finding requires that finding's `confidence`,
-  `impact`, and one-line description, and none of those are in the summary.
+  they cannot tell you which finding to act on. **Read a validator's section file
+  whenever its summary reports `Findings` > 0, OR any deliberate retention, OR
+  any subject it had to infer rather than being given.** The first is obvious;
+  the other two are the cases where the summary looks clean but rests on a
+  judgment the validator never showed you — a retention it decided was
+  intentional, or a subject it guessed at because no `oldForms` arrived.
+  Applying the gate per finding requires that finding's `confidence`, `impact`,
+  and one-line description, and none of those are in the summary.
   Then apply the gate per finding:
   - **Auto-bounce**: finding has `confidence=high AND impact=low`. Re-dispatch
     `work-implementer` with the finding appended to the spec's Notes section.
+    Never applies when the implementer returned `status: partial` — that branch
+    forbids auto-bounce outright, whatever the confidence and impact.
   - **Surface to user** (stop): every other combination. Present the implementer
     summary
     AND the validator findings (counts per severity per validator + brief
@@ -133,11 +150,17 @@ files, edits, builds, runs UTs, audits DAP-07/08, and returns a compact summary.
 
   Auto-bounce is bounded. Closure validation re-runs after each bounce, so
   without a cap a validator and an implementer that disagree will loop:
-  - At most **2** auto-bounce rounds per work item. On the 3rd, stop and
-    Surface to user regardless of confidence and impact.
-  - Never auto-bounce the same finding twice. If a finding survives a bounce and
-    is reported again in substantially the same form, it is no longer
-    auto-bounceable — Surface to user with both rounds' text.
+  - Record each bounce where it survives. A bounce already appends its finding to
+    the spec's Notes section; prefix that entry `auto-bounce round N:`. The
+    section files are fixed-path and each round overwrites the last, so they
+    cannot carry this history, and conversation state is exactly what a long
+    disagree-loop session loses.
+  - At most **2** auto-bounce rounds per work item, counted from those Notes
+    entries. On the 3rd, stop and Surface to user regardless of confidence and
+    impact.
+  - Never auto-bounce the same finding twice. If a Notes entry already records
+    substantially the same finding, it is no longer auto-bounceable — Surface to
+    user with both the Notes entry and the new report.
 
   Self-check: if your next planned action after implementer returns is anything
   other than the parallel validator dispatch above, **STOP** and dispatch.

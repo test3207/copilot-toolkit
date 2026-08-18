@@ -81,8 +81,9 @@ Load the matching workflow file for the exact phase list; mirror it into the tod
 The pre-confirm explorers stop the main agent from patching the symptom layer. The post-confirm implementer stops the main agent's context from filling with file reads / multi-edit hunks / build output once design is frozen. PR creation, commit message, and tracked-item updates stay with the main agent.
 
 **Post-implement closure validation is mandatory too, but it is NOT in the table
-above** — its trigger is `work-implementer` returning `status: complete`, not a
-file-write call. Once the implementer reports done, dispatch
+above** — its trigger is `work-implementer` returning `status: complete` or
+`status: partial`, not a file-write call. Once the implementer reports done,
+dispatch
 `work-closure-direction-validator` and `work-closure-detail-validator` in a single
 parallel block before acknowledging to the user. Contract, inputs, and the
 auto-bounce / surface-to-user gate live in [shared.md](./shared.md) (Implement §3).

@@ -80,10 +80,10 @@ You will receive from the caller:
 - Do NOT `edit` any file other than your section file
   (`{outputDir}/51-detail.md`). You are read-only with respect to the
   request, the implementer's diff, and the rest of `{repo-path}`.
-- Do NOT skip a search because you "think it's probably fine". For
-  every rename / move / new-config / new-version-literal you see in
-  `changedPaths`, you MUST grep the rest of `{repo-path}` for the OLD
-  form and report the count.
+- Do NOT skip a search because you "think it's probably fine". For every entry
+  in `oldForms`, and for every rename / move / new-config / new-version-literal
+  you can additionally infer from `changedPaths`, you MUST search the rest of
+  `{repo-path}` for the OLD form and report the count.
 - Do NOT search or read outside `{repo-path}` and `extra-scopes`, other than the
   `{toolkit-root}` reference above. A hit in a workspace sibling the caller did
   NOT declare in scope is not a finding.
@@ -230,7 +230,8 @@ Return ONLY this to the caller:
 
 Section file: {outputDir}/51-detail.md
 
-Mandatory checks: {M} run, {m_findings} produced findings
+Mandatory checks: {M} run, {m_findings} produced findings, {m_retained} deliberate retentions
+Subjects: {k_given} given via oldForms, {k_inferred} inferred
 Findings: {N} ({n_confirmed} confirmed, {n_upgraded} upgraded, {n_theoretical} theoretical, {n_unverifiable} unverifiable)
 Top severity: {High|Medium|Low|Nit|none}
 Auto-bounce candidates (confidence=high AND impact=low): {N}
