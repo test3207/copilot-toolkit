@@ -69,10 +69,10 @@ Template (~25 lines):
 ```
 
 Fill **Old form replaced** while writing the spec, not later. It is the source of
-the `oldForms` input that closure validation needs in step 3, and at spec time the
-old-to-new pair is the substance of what you are describing. Reconstructed from
-memory at dispatch time it gets forgotten, and a rename nobody names is a rename
-the detail validator never checks.
+the `oldForms` input that [closure-validation.md](./closure-validation.md) needs,
+and at spec time the old-to-new pair is the substance of what you are describing.
+Reconstructed from memory at dispatch time it gets forgotten, and a rename nobody
+names is a rename the detail validator never checks.
 
 ### 2. Dispatch `work-implementer`
 
@@ -101,7 +101,11 @@ dispatch inputs, which section files to read, the auto-bounce / surface-to-user
 gate, and the bound on auto-bounce rounds.
 
 Self-check: if your next planned action after the implementer returns is anything
-other than the parallel validator dispatch, **STOP** and dispatch.
+other than reading [closure-validation.md](./closure-validation.md) and
+dispatching both validators, **STOP** and do that. Firing the dispatch from
+memory without opening the contract loses `repo-path`, `extra-scopes`, and
+`oldForms` — and a subject the detail validator never identifies produces zero
+checks that read as a clean result.
 
 ---
 
