@@ -39,7 +39,14 @@
 
 import { execFileSync, execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, rmdirSync, statSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, relative } from 'node:path';
+
+// Single source for the marker contract -- it is written, classified and swept from three different
+// places, and drift between them silently disables reclaim.
+const ORPHAN_MARKER = '.pr-review-orphan';
+const LEAF_NAME_RE = /^worktree(-\d+)?$/;
+const DELETE_RETRIES = 5;
+const DELETE_RETRY_MS = 200;
 
 function arg(flag, def) {
   const i = process.argv.indexOf(flag);
@@ -98,7 +105,7 @@ function gitAt(dir, args) {
 // A leaf carrying .pr-review-orphan classifies orphan even when .git is absent (unknown state).
 function leafState(leafDir) {
   const gitFile = resolve(leafDir, '.git');
-  const markerFile = resolve(leafDir, '.pr-review-orphan');
+  const markerFile = resolve(leafDir, ORPHAN_MARKER);
   let stat, content;
   try { stat = statSync(gitFile); } catch { return existsSync(markerFile) ? 'orphan' : 'unknown'; }
   if (!stat.isFile()) return existsSync(markerFile) ? 'orphan' : 'unknown';
@@ -110,9 +117,21 @@ function leafState(leafDir) {
 
 function retryDelete(dir) {
   let lastErr = null;
-  try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); }
+  try { rmSync(dir, { recursive: true, force: true, maxRetries: DELETE_RETRIES, retryDelay: DELETE_RETRY_MS }); }
   catch (e) { lastErr = (e.message || String(e)).slice(0, 200); }
   return lastErr;
+}
+
+// MUST be called from every path that fails to delete a leaf. A recursive delete removes the marker
+// before it throws on the held entry, so an unmarked survivor classifies unknown -- which the sweep
+// never matches and the report never lists, making the leak permanent and invisible.
+function markOrphan(leafDir) {
+  try {
+    writeFileSync(resolve(leafDir, ORPHAN_MARKER), 'This directory was not fully deleted by pr-review cleanup.\n');
+    return null;
+  } catch (e) {
+    return `marker write failed -- this leaf will not be auto-reclaimed: ${(e.message || String(e)).slice(0, 100)}`;
+  }
 }
 
 function scanLeaves(base) {
@@ -131,7 +150,7 @@ function scanLeaves(base) {
       let leafEntries;
       try { leafEntries = readdirSync(pd, { withFileTypes: true }); } catch { continue; }
       for (const le of leafEntries) {
-        if (le.isDirectory() && /^worktree(-\d+)?$/.test(le.name)) leaves.push(resolve(pd, le.name));
+        if (le.isDirectory() && LEAF_NAME_RE.test(le.name)) leaves.push(resolve(pd, le.name));
       }
     }
   }
@@ -145,7 +164,7 @@ function orphanSweep() {
     if (leafState(p) === 'orphan') {
       retryDelete(p);
       if (!existsSync(p)) swept.push(p);
-      else remaining.push(p);
+      else { markOrphan(p); remaining.push(p); }
     }
   }
   return { swept, remaining };
@@ -219,8 +238,8 @@ if (command === 'cleanup') {
           removedPaths.push(leafDir);
         } else {
           const entry = { path: leafDir, remainingFiles: countFiles(leafDir), error: deleteErr || 'directory still exists after delete (cause unknown)' };
-          try { writeFileSync(resolve(leafDir, '.pr-review-orphan'), 'This directory was not fully deleted by pr-review cleanup.\n'); }
-          catch (e) { entry.markerError = `marker write failed -- this leaf will not be auto-reclaimed: ${(e.message || String(e)).slice(0, 100)}`; }
+          const markerErr = markOrphan(leafDir);
+          if (markerErr) entry.markerError = markerErr;
           leakedEntries.push(entry);
         }
       }
@@ -269,6 +288,7 @@ for (const p of swept) warnings.push(`orphan sweep deleted: ${p}`);
 const leafCandidates = ['worktree', 'worktree-2', 'worktree-3', 'worktree-4', 'worktree-5',
                         'worktree-6', 'worktree-7', 'worktree-8', 'worktree-9', 'worktree-10'];
 let worktree = null;
+const blockedCandidates = [];
 for (const name of leafCandidates) {
   const candidate = resolve(prDir, name);
   if (!existsSync(candidate)) { worktree = candidate; break; }
@@ -277,20 +297,19 @@ for (const name of leafCandidates) {
   gitTry(['worktree', 'remove', '--force', candidate]);
   retryDelete(candidate);
   if (!existsSync(candidate)) { worktree = candidate; break; }
+  markOrphan(candidate);
+  blockedCandidates.push(candidate);
 }
 if (!worktree) {
   fail(2, `all 10 worktree paths are occupied -- editor handles still held; restart the editor and retry: ${leafCandidates.map((n) => resolve(prDir, n)).join(', ')}`);
 }
 
-// Workspace-relative POSIX glob for includePattern (absolute path must not be used there).
-const cwdNorm = process.cwd().replace(/[/\\]+$/, '');
-const searchGlob = (worktree.startsWith(cwdNorm)
-  ? worktree.slice(cwdNorm.length + 1)
-  : worktree
-).replace(/\\/g, '/') + '/**';
+// Workspace-relative POSIX glob for includePattern (an absolute path there matches nothing).
+const searchGlob = relative(process.cwd(), worktree).replace(/\\/g, '/') + '/**';
 
-// Residual orphans: sweep survivors still present after the allocation loop may have reclaimed one.
-const residualLeaves = sweepRemaining.filter((p) => existsSync(p));
+// Every leaf a delete failed on, from the sweep and from allocation alike -- all are marked, so all
+// are reclaimable and all must be reported.
+const residualLeaves = [...new Set([...sweepRemaining, ...blockedCandidates])].filter((p) => existsSync(p));
 if (residualLeaves.length > 0) {
   warnings.push(`${residualLeaves.length} worktree ${residualLeaves.length === 1 ? 'leaf is' : 'leaves are'} still on disk and visible to git and search -- restart the editor to release held handles; for the same PR a later setup reclaims the path, for other repos or PR ids the orphan sweep reclaims the path once handles are released`);
 }
@@ -314,7 +333,7 @@ if (!add.ok) {
   const addErr = add.err.trim();
   let addHint = '';
   if (/already exists|already registered/i.test(addErr)) {
-    addHint = ' -- the path is still registered in git; run `git worktree prune` and retry';
+    addHint = ' -- the path is occupied or still registered and setup could not reclaim it; close the editor holding it and retry';
   } else if (/filename too long|max_path|longpaths/i.test(addErr)) {
     addHint = ' -- on Windows a MAX_PATH error needs core.longpaths=true';
   }
