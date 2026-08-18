@@ -112,7 +112,12 @@ function leafState(leafDir) {
   try { content = readFileSync(gitFile, 'utf8'); } catch { return existsSync(markerFile) ? 'orphan' : 'unknown'; }
   const m = content.match(/^gitdir:\s*(.+)/m);
   if (!m) return existsSync(markerFile) ? 'orphan' : 'unknown';
-  return existsSync(resolve(leafDir, m[1].trim())) ? 'live' : 'orphan';
+  const target = m[1].trim();
+  if (existsSync(resolve(leafDir, target))) return 'live';
+  // An MSYS-style "/c/..." target cannot be resolved here, and reading it as dead would let the sweep
+  // delete a LIVE worktree. Fall back to the marker, whose absence yields 'unknown' -- never deleted.
+  if (process.platform === 'win32' && /^\/[A-Za-z]\//.test(target)) return existsSync(markerFile) ? 'orphan' : 'unknown';
+  return 'orphan';
 }
 
 function retryDelete(dir) {
@@ -229,7 +234,7 @@ if (command === 'cleanup') {
     if (enumErr) {
       errors.push({ path: prDir, error: enumErr });
     } else {
-      for (const e of entries.filter((x) => x.isDirectory() && /^worktree(-\d+)?$/.test(x.name))) {
+      for (const e of entries.filter((x) => x.isDirectory() && LEAF_NAME_RE.test(x.name))) {
         const leafDir = resolve(prDir, e.name);
         gitTry(['worktree', 'remove', '--force', leafDir]);
         try { rmSync(resolve(leafDir, '.git'), { force: true }); } catch { /* best effort */ }
@@ -284,9 +289,9 @@ mkdirSync(prDir, { recursive: true });
 const { swept, remaining: sweepRemaining } = orphanSweep();
 for (const p of swept) warnings.push(`orphan sweep deleted: ${p}`);
 
-// P1: allocate a worktree path; candidates worktree, worktree-2, ... worktree-10
-const leafCandidates = ['worktree', 'worktree-2', 'worktree-3', 'worktree-4', 'worktree-5',
-                        'worktree-6', 'worktree-7', 'worktree-8', 'worktree-9', 'worktree-10'];
+// P1: allocate a worktree path; candidates worktree, worktree-2, ... worktree-<MAX_LEAF_CANDIDATES>
+const MAX_LEAF_CANDIDATES = 10;
+const leafCandidates = Array.from({ length: MAX_LEAF_CANDIDATES }, (_, i) => (i === 0 ? 'worktree' : `worktree-${i + 1}`));
 let worktree = null;
 const blockedCandidates = [];
 for (const name of leafCandidates) {
@@ -295,21 +300,26 @@ for (const name of leafCandidates) {
   // Unconditional reclaim: an aborted prior run leaves a live registration at the primary path;
   // skipping it would strand the checkout and burn a slot on every subsequent run.
   gitTry(['worktree', 'remove', '--force', candidate]);
-  retryDelete(candidate);
+  // Same .git-first order as cleanup, so a survivor is never left classifying live with an inert marker.
+  try { rmSync(resolve(candidate, '.git'), { force: true }); } catch { /* best effort */ }
+  const candidateErr = retryDelete(candidate);
   if (!existsSync(candidate)) { worktree = candidate; break; }
   markOrphan(candidate);
-  blockedCandidates.push(candidate);
+  blockedCandidates.push({ path: candidate, error: candidateErr || 'directory still exists after delete (cause unknown)' });
 }
 if (!worktree) {
-  fail(2, `all 10 worktree paths are occupied -- editor handles still held; restart the editor and retry: ${leafCandidates.map((n) => resolve(prDir, n)).join(', ')}`);
+  fail(2, `all ${MAX_LEAF_CANDIDATES} worktree paths are occupied -- editor handles still held; restart the editor and retry: ${leafCandidates.map((n) => resolve(prDir, n)).join(', ')}`);
 }
 
 // Workspace-relative POSIX glob for includePattern (an absolute path there matches nothing).
 const searchGlob = relative(process.cwd(), worktree).replace(/\\/g, '/') + '/**';
 
 // Every leaf a delete failed on, from the sweep and from allocation alike -- all are marked, so all
-// are reclaimable and all must be reported.
-const residualLeaves = [...new Set([...sweepRemaining, ...blockedCandidates])].filter((p) => existsSync(p));
+// are reclaimable and all must be reported, each with the error that blocked it.
+const residualByPath = new Map();
+for (const p of sweepRemaining) residualByPath.set(p, { path: p, error: 'orphan sweep could not delete this leaf' });
+for (const b of blockedCandidates) residualByPath.set(b.path, b);
+const residualLeaves = [...residualByPath.values()].filter((r) => existsSync(r.path));
 if (residualLeaves.length > 0) {
   warnings.push(`${residualLeaves.length} worktree ${residualLeaves.length === 1 ? 'leaf is' : 'leaves are'} still on disk and visible to git and search -- restart the editor to release held handles; for the same PR a later setup reclaims the path, for other repos or PR ids the orphan sweep reclaims the path once handles are released`);
 }
