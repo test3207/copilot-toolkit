@@ -85,6 +85,14 @@ files, edits, builds, runs UTs, audits DAP-07/08, and returns a compact summary.
   `work-closure-direction-validator` AND `work-closure-detail-validator` with
   inputs:
   - `toolkit-root`: same value passed to implementer
+  - `repo-path`: same value passed to implementer. Bounds every search the
+    validators run; without it they grep the whole workspace and report hits in
+    sibling repos as missed edits.
+  - `extra-scopes` (optional): additional workspace-relative paths that ARE in
+    scope, for a change that deliberately spans repos — e.g. a file moved from
+    one repo to another, where the old location is the thing worth checking.
+    Omit for a single-repo change; omitting it keeps the search inside
+    `repo-path`.
   - `outputDir`: `tmp/work/<item-id>/`
   - `request`: the original user request that led to this work item.
     When the request contains a universal claim (`every X is …`, `all Y are
@@ -99,11 +107,10 @@ files, edits, builds, runs UTs, audits DAP-07/08, and returns a compact summary.
   - `scope`: `all-changes-since-handoff`
 
   Then read both compact response summaries and apply the gate per finding:
-  - **Soft action** (auto): finding has `confidence=high AND impact=low`.
-    Re-dispatch `work-implementer` with the finding appended to the spec's
-    Notes section.
-  - **Hard action** (stop and surface to user): every other combination
-    (`confidence=low *` or `* impact=high`). Present the implementer summary
+  - **Auto-bounce**: finding has `confidence=high AND impact=low`. Re-dispatch
+    `work-implementer` with the finding appended to the spec's Notes section.
+  - **Surface to user** (stop): every other combination. Present the implementer
+    summary
     AND the validator findings (counts per severity per validator + brief
     one-line description per finding, with paths to the full section files at
     `tmp/work/<item-id>/50-direction.md` and `51-detail.md`). Wait for the

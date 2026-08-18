@@ -30,10 +30,10 @@ When NOT to use it:
 
 | Item | Value |
 | ---- | ----- |
-| Skill version | `v1.0` (skill conversion of work tool v2.x) |
+| Skill version | `v1.1` (skill conversion of work tool v2.x; closure validators shipped in v1.1) |
 | Working dir | `metrics/work/{itemId}/spec.md` — frozen implementation spec (main agent writes, `work-implementer` reads). |
 | Providers | [providers/ado.md](./providers/ado.md), [providers/github.md](./providers/github.md). Add a new file under `providers/` for new hosts; no workflow edits required. |
-| Subagents | `.github/agents/work-architect-explorer.md` (Analyze · Medium/Full) · `.github/agents/work-impact-tracer.md` (Analyze Full · RCA Deep) · `.github/agents/work-rca-tracer.md` (RCA Standard/Deep) · `.github/agents/work-implementer.md` (post-confirm Implement). |
+| Subagents | `.github/agents/work-architect-explorer.md` (Analyze · Medium/Full) · `.github/agents/work-impact-tracer.md` (Analyze Full · RCA Deep) · `.github/agents/work-rca-tracer.md` (RCA Standard/Deep) · `.github/agents/work-implementer.md` (post-confirm Implement) · `.github/agents/work-closure-direction-validator.md` + `.github/agents/work-closure-detail-validator.md` (post-implement closure, parallel). |
 
 ## Input Resolution (Step 0)
 
@@ -79,6 +79,13 @@ Load the matching workflow file for the exact phase list; mirror it into the tod
 | Post-confirm | Medium / Full / Standard / Deep | write spec to `metrics/work/<item-id>/spec.md`, dispatch `work-implementer`. Main agent does NOT edit code. |
 
 The pre-confirm explorers stop the main agent from patching the symptom layer. The post-confirm implementer stops the main agent's context from filling with file reads / multi-edit hunks / build output once design is frozen. PR creation, commit message, and tracked-item updates stay with the main agent.
+
+**Post-implement closure validation is mandatory too, but it is NOT in the table
+above** — its trigger is `work-implementer` returning `status: complete`, not a
+file-write call. Once the implementer reports done, dispatch
+`work-closure-direction-validator` and `work-closure-detail-validator` in a single
+parallel block before acknowledging to the user. Contract, inputs, and the
+auto-bounce / surface-to-user gate live in [shared.md](./shared.md) (Implement §3).
 
 ### Classification is sticky
 
