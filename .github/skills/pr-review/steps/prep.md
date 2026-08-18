@@ -41,7 +41,8 @@ The script prints ONE JSON object to stdout -- capture it as `worktreeInfo`:
 | Field | Use |
 | ----- | --- |
 | `worktree` | Absolute path of the searchable worktree (NOT ignored). Typically `pr-review-worktree/{repo}/{prId}/worktree`; may carry a `-N` suffix when the primary path was occupied by a locked leftover. Forward this value verbatim to subagents -- do NOT reconstruct from `{repo}/{prId}`. |
-| `orphans` | `{ count, files }` -- present only when orphan-state leaves survived the sweep. `count` covers only orphan-state leaves. A matching warning is in `warnings[]`. Leftovers are still on disk and visible to git and search; restart the editor to release held handles so a later setup for the same PR reclaims the path. |
+| `searchGlob` | Workspace-relative POSIX glob for the allocated leaf, e.g. `pr-review-worktree/{repo}/{prId}/worktree-2/**`. Use as `includePattern` for `grep_search`, `file_search`, and `semantic_search`. Forward verbatim -- do NOT reconstruct. `read_file` and absolute-path tool calls use `worktree`, not this field; the two must not be swapped. |
+| `orphans` | `{ count, paths }` -- present only when orphan-state leaves survived the sweep. `count` covers only orphan-state leaves; `paths` lists them. A matching warning is in `warnings[]`. Leftovers are still on disk and visible to git and search; restart the editor to release held handles so a later setup can reclaim them. |
 | `outDir` | `pr-review/{repo}/{prId}` (self-ignored) -- holds `diff.txt`, `changed-files.txt`, sections. |
 | `diffFile` | Full-patch path for Step 7 subagents. |
 | `changedFiles` / `additions` / `deletions` | Change-size signal for Step 4. |
@@ -52,7 +53,7 @@ The script prints ONE JSON object to stdout -- capture it as `worktreeInfo`:
 Exit codes: `0` = ok; `1` = bad arguments; `2` = git setup failure (worktree unavailable / source fetch / add) -- on non-zero STOP and surface the JSON `error` field.
 
 > The worktree lives at a NON-ignored, in-workspace path so VS Code grep / file / semantic search reach it directly (search cannot see system-temp or ignored files). Review OUTPUT artifacts stay under the self-ignored `pr-review/` tree. The worktree is removed in Step 9.3.
-> Isolation is guaranteed for LIVE trees across DIFFERENT PRs (distinct `{prId}` -> distinct worktree path). Note: a setup for one repo can delete `orphan`-state leaves under another repo's review directory (the cross-repo sweep does this intentionally). Same-PR SEQUENTIAL re-review is supported: the pre-setup orphan sweep removes any leftover from a prior cleanup, and the candidate allocation takes `worktree-N` when `worktree` is still locked. Same-PR PARALLEL review remains out of scope: two concurrent setups for the same PR would race over the same candidate paths.
+> Isolation is guaranteed for LIVE trees across DIFFERENT PRs (distinct `{prId}` -> distinct worktree path). Note: a setup for one repo can delete `orphan`-state leaves under another repo's review directory (the cross-repo sweep does this intentionally). Same-PR SEQUENTIAL re-review is supported: a `live` leftover from an aborted prior run is reclaimed unconditionally by the candidate allocation loop; an `orphan` leftover is reclaimed by the pre-setup orphan sweep; an `unknown` leftover (no `.git` and no orphan marker) is reclaimed by the allocation loop's force-remove if that succeeds, otherwise bumped to `worktree-N`. Same-PR PARALLEL review remains out of scope: two concurrent setups for the same PR would race over the same candidate paths.
 
 ## Step 4: Get Changed Files
 

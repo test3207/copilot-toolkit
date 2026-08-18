@@ -29,7 +29,8 @@ You will receive:
 - **Action items**: consolidated list of Medium+ findings (from the 3 prior subagent summaries: severity, file link, one-line description) -- file links already follow the URL rule; preserve them as-is when echoing.
 - **Section files of the 3 prior subagents**: `pr-review/{repo}/{prId}/sections/20-logic.md`, `30-impact.md`, `40-quality.md` -- read these for the call-chain tables and per-caller analyses already built (don't re-trace).
 - **Intent summary**: what the PR does
-- **Repo path**: the absolute worktree path given in your dispatch prompt (reflects the PR head; reading it never disturbs the user's live tree). This tree is NOT ignored, so `grep_search`, `file_search`, and `semantic_search` all reach it -- scope searches to it with `includePattern` set to this path (no `includeIgnoredFiles` needed). **Search division**: grep/file/semantic search here for discovery and cross-references; read a file's full content with `read_file` at this path; read the exact change set from `pr-review/{repo}/{prId}/diff.txt` (do NOT re-run `git diff`).
+- **Repo path**: the absolute worktree path given in your dispatch prompt -- use with `read_file` and any absolute-path tool call (it reflects the PR head; reading it never disturbs the user's live tree).
+- **Search glob**: the workspace-relative POSIX glob given in your dispatch prompt -- use as `includePattern` for `grep_search`, `file_search`, and `semantic_search` (no `includeIgnoredFiles` needed). These two values must not be swapped: `includePattern` requires a workspace-relative glob, not an absolute path. **Search division**: grep/file/semantic search with this glob for discovery and cross-references; read a file's full content with `read_file` at the repo path; read the exact change set from `pr-review/{repo}/{prId}/diff.txt` (do NOT re-run `git diff`).
 
 ## File Reference URL Rule
 
