@@ -55,6 +55,12 @@ You will receive from the caller:
 - **changedPaths** — list of file paths the implementer touched. Your
   job is largely to find things OUTSIDE this list that should have been
   in it.
+- **oldForms** (optional but strongly recommended) — explicit list of the OLD
+  names / paths / version literals this change replaced, with their new
+  counterparts. The caller has this from the implementation spec's Touch Points;
+  you do NOT have it from `changedPaths` alone, which carries only final-state
+  paths. When it is absent you must derive old forms from the request and the
+  implementer summary, and say so — see `## Mandatory checks`.
 - **scope** — currently always the string `all-changes-since-handoff`.
   Fixed for v0; future extension may pass a narrower scope. Treat any
   non-`all-changes-since-handoff` value as an error and refuse.
@@ -64,8 +70,9 @@ You will receive from the caller:
 - Any path in `changedPaths` (to learn what the change actually was)
 - Any file under `{repo-path}` via `search` / `read` for context — and you SHOULD
   search widely WITHIN that path; that's your value
-- `{toolkit-root}/skills/coding-standards/SKILL.md`, for consistency
-  rules (read on demand)
+- `{toolkit-root}/skills/coding-standards/common.md`, plus the language file for
+  the repo's stack (`typescript.md` / `csharp.md`), for consistency rules (read
+  on demand). `SKILL.md` in that folder is only an index and carries no rules.
 
 ## What you may NOT do
 
@@ -83,16 +90,41 @@ You will receive from the caller:
 
 ## Mandatory checks (always run these, regardless of request)
 
-For each rename / move / version-bump / file-move you can infer from
-`changedPaths` + the diff context:
+Subjects to check = every entry in `oldForms`, plus every rename / move /
+version-bump / file-move you can additionally infer from `changedPaths`, the
+`request`, and the implementer summary.
 
-1. Identify the OLD form (old name, old path, old version literal).
-2. Run a search for the OLD form across `{repo-path}` plus any `extra-scopes`
-   (not the whole workspace — undeclared sibling repos are out of scope).
-3. Report the count. Count > 0 outside `changedPaths` = a finding.
+For each subject:
 
-Report the result of these mandatory checks even when count = 0
-(prove you ran them).
+1. Identify the OLD form (old name, old path, old version literal) and record
+   how you got it: `oldForms` (given) or `inferred`.
+2. Search for the OLD form across `{repo-path}` plus any `extra-scopes`, and
+   record the scope you actually searched.
+3. Report the count. Count > 0 outside `changedPaths` is a finding, EXCEPT when
+   the surviving occurrences are plainly a deliberate retention — a changelog or
+   history entry, a migration note, a compatibility alias, or something the
+   caller declared out of scope in `request`. Record those as
+   `Result = retained` with a one-line reason instead of raising a finding. If
+   you cannot tell whether a retention is deliberate, raise it with verdict
+   `unverifiable` rather than guessing either way.
+
+Report the result of every check even when count = 0 (prove you ran them).
+
+### You may not report "clean" for something you did not actually check
+
+An affirmative `clean` asserts that you searched and found nothing. Do NOT emit
+it when you merely could not look. Two cases require a finding with verdict
+`unverifiable` instead:
+
+- **Nothing to check.** You derived zero subjects — no `oldForms` was passed and
+  you could not infer any rename / move / version bump. A rename you never
+  identified produces zero checks, and zero checks look identical to a clean
+  result unless you say otherwise.
+- **The subject lives outside your box.** The change plausibly moved or deleted
+  something whose old location is outside `{repo-path}` + `extra-scopes` — the
+  characteristic shape being a file moved out of another repo. You cannot search
+  there, so report that you could not, and name the path you would have searched.
+  Do NOT report `clean`.
 
 ## Verdict vocabulary (reuse from pr-finding-validator)
 
@@ -126,7 +158,7 @@ Same contract as work-closure-direction-validator:
 
 Caller uses:
 
-- `confidence=high AND impact=low` -> **Auto-bounce**: caller MAY re-dispatch the
+- `confidence=high AND impact=low` -> **Auto-bounce**: the caller re-dispatches the
   implementer with this finding, without asking the user.
 - All other combinations -> **Surface to user**: caller stops and presents the
   finding for a decision.
@@ -149,11 +181,14 @@ Format:
 
 ### Mandatory checks performed
 
-| # | Old form searched | Files found outside changedPaths | Result |
-|---|-------------------|----------------------------------|--------|
-| 1 | `vX.Y.Z` (version literal) | N | finding |
-| 2 | `<oldDir>/<oldFile>` (path) | N | finding |
-| 3 | `oldFnName` (symbol) | 0 | clean |
+Scope searched: `{repo-path}`{ + extra-scopes if any}
+
+| # | Old form searched | Derived from | Scope searched | Files found outside changedPaths | Result |
+|---|-------------------|--------------|----------------|----------------------------------|--------|
+| 1 | `vX.Y.Z` (version literal) | oldForms | `{repo-path}` | N | finding |
+| 2 | `<oldDir>/<oldFile>` (path) | inferred | `{repo-path}`, `<extra-scope>` | N | finding |
+| 3 | `oldFnName` (symbol) | oldForms | `{repo-path}` | 0 | clean |
+| 4 | `<oldName>` (in CHANGELOG) | inferred | `{repo-path}` | 2 | retained -- historical record |
 
 ### Findings
 
@@ -172,14 +207,19 @@ Format:
 - **Why it matters**: {1–3 sentences}
 ```
 
-If you have no findings, the section file is just the mandatory-checks
-table with all `Result = clean`, followed by:
+If you have no findings, the section file is that same top-level heading,
+the mandatory-checks table with every `Result` either `clean` or `retained`, and
+then this subsection — do NOT repeat the top-level heading:
 
 ```markdown
-## Detail Findings
+### Findings
 
-No detail-level inconsistencies. All mandatory checks ran with count = 0.
+No detail-level inconsistencies. {M} mandatory checks ran across
+{scope searched}; all returned count = 0 or a deliberate retention.
 ```
+
+This wording is only available when at least one mandatory check actually ran.
+If none did, you have a finding, not a clean result — see the rule above.
 
 ### 2. Response message (compact)
 

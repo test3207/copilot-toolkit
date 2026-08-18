@@ -80,6 +80,11 @@ files, edits, builds, runs UTs, audits DAP-07/08, and returns a compact summary.
 - IF `status: blocked` -> resolve the cited question (read the cited file range
   yourself, or ask user) then re-dispatch with an updated spec. Do NOT escalate
   to "I'll write the code myself" — that defeats the context-isolation gain.
+- IF `status: partial` -> treat it as `complete` FOR CLOSURE PURPOSES: run the
+  mandatory closure validation below against what was actually done. Then always
+  **Surface to user** — present the validator findings together with the
+  remainder the implementer did not finish. Never auto-bounce a `partial`; the
+  unfinished remainder is a user decision, not a validator finding.
 - IF `status: complete` -> **MANDATORY: closure validation before user
   acknowledgement.** In a **single parallel `runSubagent` block**, dispatch
   `work-closure-direction-validator` AND `work-closure-detail-validator` with
@@ -104,9 +109,19 @@ files, edits, builds, runs UTs, audits DAP-07/08, and returns a compact summary.
     literals).
   - `implementerSummary`: the verbatim summary just returned
   - `changedPaths`: file list from the implementer summary's "Files Modified" table
+  - `oldForms` (optional but strongly recommended): the OLD names / paths /
+    version literals this change replaced, with their new counterparts, taken
+    from the spec's Touch Points. `changedPaths` carries only final-state paths,
+    so without this the detail validator has to guess what was renamed — and a
+    rename it never identifies produces zero checks that read as a clean result.
   - `scope`: `all-changes-since-handoff`
 
-  Then read both compact response summaries and apply the gate per finding:
+  Then read both compact response summaries. The summaries carry COUNTS ONLY —
+  they cannot tell you which finding to act on. **For each validator whose
+  summary reports `Findings` > 0, read its section file before applying the
+  gate.** Applying the gate per finding requires that finding's `confidence`,
+  `impact`, and one-line description, and none of those are in the summary.
+  Then apply the gate per finding:
   - **Auto-bounce**: finding has `confidence=high AND impact=low`. Re-dispatch
     `work-implementer` with the finding appended to the spec's Notes section.
   - **Surface to user** (stop): every other combination. Present the implementer
@@ -115,6 +130,14 @@ files, edits, builds, runs UTs, audits DAP-07/08, and returns a compact summary.
     one-line description per finding, with paths to the full section files at
     `tmp/work/<item-id>/50-direction.md` and `51-detail.md`). Wait for the
     user's response before doing anything else.
+
+  Auto-bounce is bounded. Closure validation re-runs after each bounce, so
+  without a cap a validator and an implementer that disagree will loop:
+  - At most **2** auto-bounce rounds per work item. On the 3rd, stop and
+    Surface to user regardless of confidence and impact.
+  - Never auto-bounce the same finding twice. If a finding survives a bounce and
+    is reported again in substantially the same form, it is no longer
+    auto-bounceable — Surface to user with both rounds' text.
 
   Self-check: if your next planned action after implementer returns is anything
   other than the parallel validator dispatch above, **STOP** and dispatch.

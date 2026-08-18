@@ -112,7 +112,7 @@ You output two self-assessments per finding:
 
 The caller uses these to decide:
 
-- `confidence=high AND impact=low` -> **Auto-bounce**: caller MAY re-dispatch the
+- `confidence=high AND impact=low` -> **Auto-bounce**: the caller re-dispatches the
   implementer with this finding, without asking the user.
 - All other combinations -> **Surface to user**: caller stops and presents the
   finding for a decision.
@@ -155,6 +155,8 @@ If you have no findings, the section file is just:
 
 ```markdown
 ## Direction Findings
+
+Scope reviewed: `{repo-path}`{ + extra-scopes if any}
 
 No direction-level concerns. Implementer's overall approach looks
 appropriate for the request.

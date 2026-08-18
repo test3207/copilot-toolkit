@@ -31,7 +31,7 @@ When NOT to use it:
 | Item | Value |
 | ---- | ----- |
 | Skill version | `v1.1` (skill conversion of work tool v2.x; closure validators shipped in v1.1) |
-| Working dir | `metrics/work/{itemId}/spec.md` — frozen implementation spec (main agent writes, `work-implementer` reads). |
+| Working dir | `metrics/work/{itemId}/spec.md` — frozen implementation spec (main agent writes, `work-implementer` reads). Closure sections go to `tmp/work/{itemId}/50-direction.md` + `51-detail.md` (validators write, main agent reads). |
 | Providers | [providers/ado.md](./providers/ado.md), [providers/github.md](./providers/github.md). Add a new file under `providers/` for new hosts; no workflow edits required. |
 | Subagents | `.github/agents/work-architect-explorer.md` (Analyze · Medium/Full) · `.github/agents/work-impact-tracer.md` (Analyze Full · RCA Deep) · `.github/agents/work-rca-tracer.md` (RCA Standard/Deep) · `.github/agents/work-implementer.md` (post-confirm Implement) · `.github/agents/work-closure-direction-validator.md` + `.github/agents/work-closure-detail-validator.md` (post-implement closure, parallel). |
 
