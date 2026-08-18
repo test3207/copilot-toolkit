@@ -248,16 +248,6 @@ mkdirSync(prDir, { recursive: true });
 
 // P4: sweep orphan leaves across all repos before allocating a path
 orphanSweep();
-const residualLeaves = scanLeaves(resolve(process.cwd(), 'pr-review-worktree')).filter((p) => leafState(p) !== 'live');
-let orphanTotalFiles = 0, orphanTotalBytes = 0;
-for (const p of residualLeaves) {
-  const { files, bytes } = countFilesAndBytes(p);
-  orphanTotalFiles += files;
-  orphanTotalBytes += bytes;
-}
-if (residualLeaves.length > 0) {
-  warnings.push(`${residualLeaves.length} worktree ${residualLeaves.length === 1 ? 'leaf is' : 'leaves are'} still on disk and visible to git and search -- restart the editor to release held handles; a later setup for the same PR reclaims the path`);
-}
 
 // P1: allocate a worktree path; candidates worktree, worktree-2, ... worktree-10
 const leafCandidates = ['worktree', 'worktree-2', 'worktree-3', 'worktree-4', 'worktree-5',
@@ -272,6 +262,20 @@ for (const name of leafCandidates) {
 }
 if (!worktree) {
   fail(2, `all 10 worktree paths are occupied -- editor handles still held; restart the editor and retry: ${leafCandidates.map((n) => resolve(prDir, n)).join(', ')}`);
+}
+
+// Counted AFTER allocation so a leaf the loop just reclaimed is not reported as still leaking.
+// Reporting is deliberately wider than the sweep's delete predicate: every non-live leaf, since
+// reporting cannot destroy anything.
+const residualLeaves = scanLeaves(resolve(process.cwd(), 'pr-review-worktree')).filter((p) => leafState(p) !== 'live');
+let orphanTotalFiles = 0, orphanTotalBytes = 0;
+for (const p of residualLeaves) {
+  const { files, bytes } = countFilesAndBytes(p);
+  orphanTotalFiles += files;
+  orphanTotalBytes += bytes;
+}
+if (residualLeaves.length > 0) {
+  warnings.push(`${residualLeaves.length} worktree ${residualLeaves.length === 1 ? 'leaf is' : 'leaves are'} still on disk and visible to git and search -- restart the editor to release held handles; a later setup for the same PR reclaims the path`);
 }
 gitTry(['worktree', 'prune']);
 
