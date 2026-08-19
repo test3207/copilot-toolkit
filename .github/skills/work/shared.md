@@ -51,9 +51,9 @@ Template (~25 lines):
 - Scenario: new | reuse | retire
 
 ## Touch Points
-| # | File | Change | Constraints / Reuse |
-| - | ---- | ------ | ------------------- |
-| 1 | `<path>` | <concrete change> | use existing X at `<file#line>`; do NOT duplicate Y |
+| # | File | Change | Old form replaced | Constraints / Reuse |
+| - | ---- | ------ | ----------------- | ------------------- |
+| 1 | `<path>` | <concrete change> | `<old name / path / version literal>` -> `<new>`, or `-` | use existing X at `<file#line>`; do NOT duplicate Y |
 
 ## Boundary Literals (DAP-08, only if external-contract literals appear)
 | Literal | Source citation (telemetry / sibling-handler / service-source / user-pasted) |
@@ -68,6 +68,12 @@ Template (~25 lines):
 <anything implementer needs to know>
 ```
 
+Fill **Old form replaced** while writing the spec, not later. It is the source of
+the `oldForms` input that [closure-validation.md](./closure-validation.md) needs,
+and at spec time the old-to-new pair is the substance of what you are describing.
+Reconstructed from memory at dispatch time it gets forgotten, and a rename nobody
+names is a rename the detail validator never checks.
+
 ### 2. Dispatch `work-implementer`
 
 Pass in the prompt: `toolkit-root` (from main agent), `spec-path`, `repo-path`, `registry-path`, `coding-standards`
@@ -77,40 +83,31 @@ files, edits, builds, runs UTs, audits DAP-07/08, and returns a compact summary.
 
 ### 3. Review the returned summary
 
-- IF `status: blocked` -> resolve the cited question (read the cited file range
+The implementer reports its outcome in an `overall:` field.
+
+- IF `overall: blocked` -> resolve the cited question (read the cited file range
   yourself, or ask user) then re-dispatch with an updated spec. Do NOT escalate
   to "I'll write the code myself" — that defeats the context-isolation gain.
-- IF `status: complete` -> **MANDATORY: closure validation before user
-  acknowledgement.** In a **single parallel `runSubagent` block**, dispatch
-  `work-closure-direction-validator` AND `work-closure-detail-validator` with
-  inputs:
-  - `toolkit-root`: same value passed to implementer
-  - `outputDir`: `tmp/work/<item-id>/`
-  - `request`: the original user request that led to this work item.
-    When the request contains a universal claim (`every X is …`, `all Y are
-    …`, `no Z does …`), spell out the SCOPE of that claim — which files /
-    which subsystem the claim covers — so the validator doesn't generalize
-    it across the whole repo (e.g. "every `v1.x.y` literal in the tree is
-    fictional" must say "only in `install/`, `scripts/`, `INSTALL.md`,
-    `README.md`" if other dirs intentionally carry their own version
-    literals).
-  - `implementerSummary`: the verbatim summary just returned
-  - `changedPaths`: file list from the implementer summary's "Files Modified" table
-  - `scope`: `all-changes-since-handoff`
+- IF `overall: partial` -> closure validation still fires, against what was
+  actually done. Afterwards always **Surface to user**: present the validator
+  findings together with the remainder the implementer did not finish. Never
+  auto-bounce a `partial`; the unfinished remainder is a user decision, not a
+  validator finding.
+- IF `overall: complete` -> closure validation fires.
 
-  Then read both compact response summaries and apply the gate per finding:
-  - **Soft action** (auto): finding has `confidence=high AND impact=low`.
-    Re-dispatch `work-implementer` with the finding appended to the spec's
-    Notes section.
-  - **Hard action** (stop and surface to user): every other combination
-    (`confidence=low *` or `* impact=high`). Present the implementer summary
-    AND the validator findings (counts per severity per validator + brief
-    one-line description per finding, with paths to the full section files at
-    `tmp/work/<item-id>/50-direction.md` and `51-detail.md`). Wait for the
-    user's response before doing anything else.
+**On `complete` and on `partial` only — MANDATORY: closure validation before user
+acknowledgement.** Read [closure-validation.md](./closure-validation.md) and
+follow it; it owns the dispatch inputs, which section files to read, the
+auto-bounce / surface-to-user gate, and the bound on auto-bounce rounds. The
+`blocked` branch does not trigger closure validation — there is nothing finished
+to validate; resolve the question and re-dispatch the implementer instead.
 
-  Self-check: if your next planned action after implementer returns is anything
-  other than the parallel validator dispatch above, **STOP** and dispatch.
+Self-check, on those same two branches: if your next planned action is anything
+other than reading [closure-validation.md](./closure-validation.md) and
+dispatching both validators, **STOP** and do that. Firing the dispatch from
+memory without opening the contract loses `repo-path`, `extra-scopes`, and
+`oldForms` — and a subject the detail validator never identifies produces zero
+checks that read as a clean result.
 
 ---
 

@@ -72,4 +72,6 @@ Where `<input>` may be:
 - `work-impact-tracer` — trace call chain / blast radius of proposed touch points.
 - `work-rca-tracer` — trace bug symptom to root cause (for bug-fix flow).
 - `work-implementer` — apply a confirmed implementation spec, build, run UTs, return diff summary.
+- `work-closure-direction-validator` — after implement, audit the direction of the change.
+- `work-closure-detail-validator` — after implement, audit for missed / orphaned references.
 - `Explore` — generic read-only codebase exploration.

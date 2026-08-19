@@ -101,7 +101,10 @@ then add to the consumer's `.vscode/settings.json`:
 
 Reload the VS Code window. Toolkit skills, agents, and prompts now coexist
 with the consumer's own `.github/skills/`, `.github/agents/`, and
-`.github/prompts/`.
+`.github/prompts/` — with one caveat: two files of the same kind declaring the
+same `name:` have
+no defined precedence, so if you keep a local copy of something the toolkit also
+ships, delete your copy. See INSTALL.md, Upgrade.
 
 ## Versioning
 
