@@ -201,6 +201,7 @@ Scope searched: `{repo-path}`{ + extra-scopes if any}
 | 2 | `<oldDir>/<oldFile>` (path) | inferred | `{repo-path}`, `<extra-scope>` | N | finding |
 | 3 | `oldFnName` (symbol) | oldForms | `{repo-path}` | 0 | clean |
 | 4 | `<oldName>` (in CHANGELOG) | inferred | `{repo-path}` | 2 | retained -- historical record |
+| 5 | none -- no rename, move, or version bump in this change | n/a | `{repo-path}` | n/a | n/a -- nothing to search for |
 
 ### Findings
 
@@ -220,14 +221,15 @@ Scope searched: `{repo-path}`{ + extra-scopes if any}
 ```
 
 If you have no findings, the section file is that same top-level heading,
-the mandatory-checks table with every `Result` `clean`, `retained`, or `n/a`, and
-then this subsection — do NOT repeat the top-level heading:
+the mandatory-checks table with every `Result` being `clean`, `retained`, or
+`n/a`, and then this subsection — do NOT repeat the top-level heading:
 
 ```markdown
 ### Findings
 
 No detail-level inconsistencies. {M} mandatory checks ran across
-{scope searched}; all returned count = 0 or a deliberate retention.
+{scope searched}; all returned count = 0, a deliberate retention, or `n/a`
+because the change had no subjects to check.
 ```
 
 This wording is only available when the mandatory-checks table has at least one
@@ -243,7 +245,7 @@ Return ONLY this to the caller:
 
 Section file: {outputDir}/51-detail.md
 
-Mandatory checks: {M} run, {m_findings} produced findings, {m_retained} deliberate retentions
+Mandatory checks: {M} run, {m_findings} produced findings, {m_retained} deliberate retentions, {m_na} n/a
 Subjects: {k_given} given via oldForms, {k_inferred} inferred
 Findings: {N} ({n_confirmed} confirmed, {n_upgraded} upgraded, {n_theoretical} theoretical, {n_unverifiable} unverifiable)
 Top severity: {High|Medium|Low|Nit|none}

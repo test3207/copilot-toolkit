@@ -68,12 +68,13 @@ act on. Applying the gate per finding requires that finding's `confidence`,
   - `overall: partial` forbids auto-bounce outright, whatever the confidence and
     impact; the unfinished remainder is the user's call.
   - An `unverifiable` finding is the validator reporting something it could not
-    resolve, so resolving it is yours. Which move that takes depends on the
-    finding: re-dispatch with `oldForms` or `extra-scopes` when the validator
-    could not reach the subject, clarify the `request` scope when it could not
-    tell whether a retention was deliberate, or simply decide it yourself.
-    Sending any of those to the implementer wastes a bounce round on a party who
-    cannot act on it.
+    resolve, so resolving it is yours — after you surface it, not instead of
+    surfacing it. It falls into the branch below like any other non-auto-bounce
+    finding; when you present it, name the move it will take: re-dispatch with
+    `oldForms` or `extra-scopes` when the validator could not reach the subject,
+    clarify the `request` scope when it could not tell whether a retention was
+    deliberate, or a call only the user can make. Sending any of those to the
+    implementer instead wastes a bounce round on a party who cannot act on it.
 - **Surface to user** (stop): every other combination. Present the implementer
   summary AND the validator findings (counts per severity per validator + brief
   one-line description per finding, with paths to the full section files at
