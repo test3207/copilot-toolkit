@@ -207,11 +207,11 @@ git commit -m "Mount copilot-toolkit (sync, v0.1.0)"
 
 ## Scenario 5: Upgrade to a newer release
 
-> **If you kept a local copy of something the new release now ships** (a skill or
-> an agent you had under your own `.github/`), delete your copy in the SAME
-> commit that bumps the toolkit. Two agent files declaring the same `name:` have
-> no defined precedence -- VS Code may load either one, so a stale local copy can
-> silently shadow the released version.
+> **If you kept a local copy of something the new release now ships** (a skill,
+> an agent, or a prompt you had under your own `.github/`), delete your copy in
+> the SAME commit that bumps the toolkit. Two files of the same kind declaring
+> the same `name:` have no defined precedence -- VS Code may load either one, so
+> a stale local copy can silently shadow the released version.
 
 ### Submodule mode
 

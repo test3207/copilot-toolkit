@@ -112,10 +112,13 @@ You output two self-assessments per finding:
 
 The caller uses these to decide:
 
-- `confidence=high AND impact=low` -> **Auto-bounce**: the caller re-dispatches the
-  implementer with this finding, without asking the user.
-- All other combinations -> **Surface to user**: caller stops and presents the
-  finding for a decision.
+- `confidence=high AND impact=low`, and the verdict is not `unverifiable`
+  -> **Auto-bounce**: the caller re-dispatches the implementer with this finding,
+  without asking the user.
+- Everything else, including every `unverifiable` finding -> **Surface to user**:
+  caller stops and presents the finding for a decision. An `unverifiable` finding
+  reports something you could not resolve, so the implementer is not the party
+  who can act on it.
 
 You do not decide; you report both.
 
@@ -173,7 +176,7 @@ Section file: {outputDir}/50-direction.md
 
 Findings: {N} ({n_confirmed} confirmed, {n_upgraded} upgraded, {n_theoretical} theoretical, {n_unverifiable} unverifiable)
 Top severity: {High|Medium|Low|Nit|none}
-Auto-bounce candidates (confidence=high AND impact=low): {N}
+Auto-bounce candidates (confidence=high AND impact=low, verdict not unverifiable): {N}
 ```
 
 No prose, no per-finding details in the response. Those live in the

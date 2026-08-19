@@ -63,12 +63,17 @@ act on. Applying the gate per finding requires that finding's `confidence`,
 
 - **Auto-bounce**: finding has `confidence=high AND impact=low` AND its verdict is
   not `unverifiable`. Re-dispatch `work-implementer` with the finding appended to
-  the spec's Notes section. Two exclusions: it never applies when the implementer
-  returned `overall: partial` (that branch forbids auto-bounce outright, whatever
-  the confidence and impact), and it never applies to an `unverifiable` finding —
-  that verdict means the validator could not check something, which only you can
-  fix by re-dispatching it with `oldForms` or `extra-scopes`. Sending it to the
-  implementer wastes a bounce round on a party who cannot act on it.
+  the spec's Notes section. Two exclusions, and both answer the same question —
+  is the implementer the party who can act on this:
+  - `overall: partial` forbids auto-bounce outright, whatever the confidence and
+    impact; the unfinished remainder is the user's call.
+  - An `unverifiable` finding is the validator reporting something it could not
+    resolve, so resolving it is yours. Which move that takes depends on the
+    finding: re-dispatch with `oldForms` or `extra-scopes` when the validator
+    could not reach the subject, clarify the `request` scope when it could not
+    tell whether a retention was deliberate, or simply decide it yourself.
+    Sending any of those to the implementer wastes a bounce round on a party who
+    cannot act on it.
 - **Surface to user** (stop): every other combination. Present the implementer
   summary AND the validator findings (counts per severity per validator + brief
   one-line description per finding, with paths to the full section files at
