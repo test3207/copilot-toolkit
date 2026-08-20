@@ -89,7 +89,8 @@ This consumer pulls reusable skills, agents, and scripts from the upstream
   `bash .copilot-toolkit/install/sync.sh --tag <tag>`) clones the upstream tag and
   replaces the whole `.copilot-toolkit/` tree, then records a SHA256 manifest in
   `.copilot-toolkit/.sync-lock`. On re-sync it re-hashes every tracked file and
-  refuses to overwrite when it finds a local edit; `-Force` discards those edits.
+  refuses to overwrite when it finds a local edit; `-Force` (`--force` for the
+  bash script) discards those edits.
 
 Whichever mode, **never edit toolkit-shipped files directly in this consumer**.
 File a PR upstream and re-pull. Consumer-only skills, agents, and prompts live
