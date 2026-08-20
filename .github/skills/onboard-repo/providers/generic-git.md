@@ -89,7 +89,7 @@ After the generic header (name, path, tech, branch), the provider's block:
 | coding-standards | `TODO` |
 ```
 
-All consumer-tool fields (PR review, work, oncall) remain `TODO` — the registry entry exists, but `/pr-review`, `/work`, and `/oncall` will refuse to run against this entry until a dedicated provider is added.
+All consumer-tool fields (PR review, work) remain `TODO` — the registry entry exists, but `/pr-review` and `/work` will refuse to run against this entry until a dedicated provider is added.
 
 ## mcpTools
 

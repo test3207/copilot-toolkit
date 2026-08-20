@@ -271,7 +271,7 @@ git commit -m "Sync copilot-toolkit -> v0.1.0"
 git submodule deinit -f .copilot-toolkit
 git rm -f .copilot-toolkit
 Remove-Item -Recurse -Force .git/modules/.copilot-toolkit -ErrorAction SilentlyContinue
-# Remove the two keys from .vscode/settings.json by hand.
+# Remove the three toolkit keys from .vscode/settings.json by hand.
 git add .gitmodules .vscode/settings.json
 git commit -m "Remove copilot-toolkit submodule"
 ```
@@ -282,7 +282,7 @@ git commit -m "Remove copilot-toolkit submodule"
 pwsh -File .copilot-toolkit/install/sync.ps1 -Uninstall
 # Or manually:
 #   Remove-Item -Recurse -Force .copilot-toolkit
-# Remove the two keys from .vscode/settings.json by hand.
+# Remove the three toolkit keys from .vscode/settings.json by hand.
 git add .copilot-toolkit .vscode/settings.json
 git commit -m "Remove copilot-toolkit (sync)"
 ```

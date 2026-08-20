@@ -21,6 +21,7 @@ When NOT to use it:
 
 ## Inputs
 
+- `toolkit-root` — workspace-relative path the entry prompt resolved (`.copilot-toolkit/.github` when consumed via submodule, `.github` when self-hosted in this repo). The skill threads this value to every subagent so each one can locate its `{toolkit-root}/skills/tool-dev/...` references at runtime.
 - `action` — `create` | `update` | `review` (resolved by the entry prompt from `${input:action}`).
 - `name` — tool name (resolved from `${input:name}`).
 - `user request text` — the freeform sentence the user attached after `/tool-dev <action> <name>` (used by the Confirm Design Gate to classify update intent).
@@ -34,6 +35,7 @@ When NOT to use it:
 - **No wildcard tools** — always specify exact tool names, never use `*`
 - **Recipe glue = Node script, not inline shell** — deterministic multi-step glue in a skill/workflow recipe (git orchestration, JSON shaping, file scaffolding) goes in a committed `scripts/<name>.mjs` run as `node .copilot-toolkit/scripts/<name>.mjs …`, NOT an inline `pwsh`/`bash` block in the markdown. Inline shell in recipes breaks on cross-platform quoting/escaping and can't be tested; Node is the guaranteed runtime (preflight). Single host commands (`git --no-pager …`) stay inline; anything with a loop / branch / multi-command sequence becomes a script. LLM judgment stays in markdown — only deterministic glue moves to the script. Enforced by `node .copilot-toolkit/scripts/lint-recipes.mjs` (fails on multi-step inline shell in `.github/skills` / `.github/prompts` recipes); opt out an intentional inline block with `<!-- lint-recipes: allow <reason> -->` on the line above the fence.
 - **Helper scripts default to Node** — a new committed `scripts/` helper is a `.mjs` run via `node`, not a `.ps1`/`.sh`, UNLESS it must run before Node is guaranteed (install / bootstrap precedes preflight — e.g. `install/sync.ps1` + `sync.sh`) or needs a shell-native capability with no reasonable Node equivalent. Prefer Node; when you pick PowerShell/bash, state the reason in the script header.
+- **Extend, don't fork** — when a `scripts/` helper in the repo you are working on needs new behavior, add a switch or parameter to the existing one. Never land `<name>-v2`, `<name>-new`, `<name>-<YYYY-MM>`, or `backfill-<id>` as a permanent helper; one-shot work goes to a scratch dir, never into `scripts/`.
 - **Prompt = self-contained, Doc = design knowledge** — prompts contain all runtime instructions; `docs/tools/<name>.md` stores design rationale, changelog, test cases (read only by this skill). If a prompt needs reference data, inline it or put in a skill / workflow file. Never load doc files at runtime from the tool's own prompt.
 - **Context budget = main-agent steady-state, not file LOC.** A 200-line reference loaded only by one subagent ≪ a 30-line block inlined in main-agent workflow that re-enters context every turn. Optimize for "main-agent free ctx in mid/late execution", not for total LOC.
 - **File size budgets** (split by load site):
@@ -80,6 +82,8 @@ Status: **status** | Since: YYYY-MM-DD
 ## TODO
 ```
 
+Status values: `stable`, `active`, `planned`, `blocked`.
+
 ## For "create":
 
 1. Use a subagent to research: scan workspace for naming/scope conflicts with existing tools
@@ -91,7 +95,7 @@ Status: **status** | Since: YYYY-MM-DD
 3. **Extensibility gate**: IF creating knowledge file (catalogs, rules, patterns) → read [context-engineering.md](./context-engineering.md) (~121 lines), assess growth trajectory, pick structure
 4. **Context design brief** — list workflow overview, each component (prompt, doc, references, subagents) with estimated size and load timing, total context budget, design rationale and purpose. IF references/subagents involved → read [context-engineering.md](./context-engineering.md) + [subagent-design.md](./subagent-design.md) as design basis.
 5. Create `docs/tools/<name>.md` with all required sections above (respect ~150 line budget)
-6. Create implementation — use `.github/prompts/_template.prompt.md` or `.github/agents/_template.md` as starting point. Respect file size budgets
+6. Create implementation — use `.copilot-toolkit/templates/_template.prompt.md` or `.copilot-toolkit/.github/agents/_template.md` as starting point (paths assume submodule / sync mount; if you self-host the toolkit as the workspace root, drop the `.copilot-toolkit/` prefix). Respect file size budgets
 7. IF any existing files overlap with the new tool → run Restructure Verification Checklist
 8. Update `docs/index.md` dashboard
 9. Add test verification task to `docs/backlog.md`

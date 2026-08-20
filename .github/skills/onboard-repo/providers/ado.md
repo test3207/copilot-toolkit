@@ -136,4 +136,4 @@ If onboarding a repo from a new ADO org whose MCP server is not yet in `.vscode/
 
 ## downstreamPromptUpdates
 
-After onboarding, audit the consuming prompts (`work.prompt.md`, `pr-review.prompt.md`, `oncall.prompt.md`) for ADO MCP allowlist entries. If the new repo uses an ADO server that those prompts don't already declare, append the required `{server}/<tool>` entries to their `tools:` lists. No edit needed if the new repo uses the same servers as an already-onboarded repo.
+After onboarding, audit the consuming prompts (`work.prompt.md`, `pr-review.prompt.md`, and any consumer-private prompt such as an `oncall.prompt.md`) for ADO MCP allowlist entries. If the new repo uses an ADO server that those prompts don't already declare, append the required `{server}/<tool>` entries to their `tools:` lists. No edit needed if the new repo uses the same servers as an already-onboarded repo.
