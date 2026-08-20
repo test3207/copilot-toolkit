@@ -22,7 +22,7 @@
 # -----------------------------------------------------------
 # Both `user-invocable: false` AND `disable-model-invocation: true` are set, so the
 # template loads cleanly (no lint errors) but is suppressed from the `/` menu and from
-# model auto-invocation. Same approach as `.github/agents/_template.md` (which sets
+# model auto-invocation. Same approach as `.copilot-toolkit/.github/agents/_template.md` (which sets
 # `name: template-agent` + `user-invocable: false`). Do NOT try to hide a template by
 # giving it an invalid `name` (e.g. leading underscore) — the spec accepts only
 # `[a-z0-9-]`, so VSCode flags it in the editor.

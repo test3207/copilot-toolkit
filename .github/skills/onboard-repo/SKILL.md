@@ -26,7 +26,6 @@ Ask the user for:
 1. **Repo URL** (required) — e.g. `https://github.com/<owner>/<repo>`, `https://<org>.visualstudio.com/<project>/_git/<repo>`, `dev.azure.com/<org>/<project>/_git/<repo>`, or `git@<host>:<group>/<repo>.git`.
 2. **Tech stack** (required) — e.g. `C#`, `TypeScript`, `Python`, `Go`, `Markdown`. Free-form (registry just records it).
 3. **Ownership input** — provider-dependent. ADO: an `area-path` string or a sample WI link. GitHub: nothing (auto-resolved from CODEOWNERS if present). Generic git: skipped (`TODO`).
-4. **Tools to apply** — default: all (`work`, `pr-review`, `oncall`, `dep`). The provider may flag some as unavailable (e.g. `work` / `oncall` against `generic-git`).
 
 ## Quick Reference
 
