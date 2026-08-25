@@ -43,9 +43,10 @@ function walk(p, acc) {
   return acc;
 }
 
-// Proxy for "is a recipe", not a definition: everything under .github/ counts, so the templates/ seed files stay unlinted.
+// Proxy for "is a recipe", not a definition: everything under .github/ counts, because that is where recipes live.
 function isRecipeFile(p) {
-  const norm = p.split(sep).join('/');
+  // Resolved, not raw: a relative argument from inside .github/ would otherwise carry no segment to match and scan nothing.
+  const norm = resolve(p).split(sep).join('/');
   return /(^|\/)\.github\//.test(norm);
 }
 
