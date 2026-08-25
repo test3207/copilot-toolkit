@@ -51,6 +51,17 @@ Content read together should be in the same file. Content read conditionally sho
 
 See [subagent-design.md](./subagent-design.md) for subagent-specific budgets (context input, return size, reference manifest).
 
+## Single-Sourcing Check
+
+Before writing **or changing** a statement of a fact (a rule, a threshold, an enumeration, a predicate, a path list), grep for it.
+
+- **It is already stated elsewhere and this edit changes one copy** → update every copy in this same edit, or collapse the rest into pointers. A partial update is the defect this check exists to prevent, and it is the shape every recorded instance has taken.
+- **Another file already states it and this site does not yet** → write a pointer to that site, not a second copy.
+- **It genuinely must be restated here** → say why, inline at the restating site, in the same edit.
+
+Deciding question: *can the reader at this site follow a pointer?* If yes, the pointer is the answer.
+A restatement with no recorded reason is a defect — the copies drift apart and neither announces which one is canonical.
+
 ## Restructure Verification Checklist
 
 When splitting or reorganizing files:
@@ -59,7 +70,7 @@ When splitting or reorganizing files:
 2. **Create** — write new files with deduplicated content
 3. **Slim** — remove migrated content from old files, replace with references
 4. **References** — verify all cross-file links resolve (no broken paths)
-5. **Dedup** — grep key phrases to confirm they exist in exactly one canonical location
+5. **Dedup** — apply the Single-Sourcing Check above to every fact the restructure moved
 6. **Budget check** — verify all files stay within size budgets above
 
 ## Reference Loading Rules
