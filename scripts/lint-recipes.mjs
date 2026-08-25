@@ -2,28 +2,29 @@
 // lint-recipes.mjs -- recipe inline-shell gate for the "recipe glue = Node script,
 // not inline shell" rule (tool-dev/SKILL.md).
 //
-// A skill/workflow recipe must not embed a MULTI-STEP pwsh/bash block -- deterministic
+// A recipe file must not embed a MULTI-STEP pwsh/bash block -- deterministic
 // multi-step glue belongs in a committed scripts/<name>.mjs. Single host commands
-// (git --no-pager ..., gh ...) stay inline. Scanned ONLY in recipe files (paths under a
-// /skills/ or /prompts/ segment) so usage-example blocks in README / INSTALL / templates
-// never trip.
+// (git --no-pager ..., gh ...) stay inline. Scanned ONLY in recipe files (see isRecipeFile
+// below) so usage-example blocks in documentation outside recipe scope never trip.
 //
 // Opt out an intentional inline block with an HTML comment on the line immediately
 // above the opening fence:  <!-- lint-recipes: allow <reason> -->
 //
 // Usage:
-//   node lint-recipes.mjs [<path> ...]      (default: .github)
+//   node lint-recipes.mjs [<path> ...]      (no path = this toolkit's own .github, regardless of cwd)
 //
 // stdout = one `<file>:<line>: <reason>` per flagged fenced block.
 // Exit codes: 0 = clean | 1 = >=1 violation | 2 = bad usage / path not found.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const RECIPE_LANGS = new Set(['pwsh', 'powershell', 'bash', 'sh', 'shell']);
 
 const paths = process.argv.slice(2).filter((a) => !a.startsWith('--'));
-if (paths.length === 0) paths.push('.github');
+// Script-relative so a no-arg run always targets this toolkit's own tree, whatever the cwd.
+if (paths.length === 0) paths.push(resolve(dirname(fileURLToPath(import.meta.url)), '../.github'));
 
 function fail(code, message) {
   console.error(JSON.stringify({ error: message }));
@@ -42,10 +43,11 @@ function walk(p, acc) {
   return acc;
 }
 
-// Only recipe files (under a skills/ or prompts/ path segment) are subject to the gate.
+// Proxy for "is a recipe", not a definition: everything under .github/ counts, because that is where recipes live.
 function isRecipeFile(p) {
-  const norm = p.split(sep).join('/');
-  return /(^|\/)(skills|prompts)\//.test(norm);
+  // Resolved, not raw: a relative argument from inside .github/ would otherwise carry no segment to match and scan nothing.
+  const norm = resolve(p).split(sep).join('/');
+  return /(^|\/)\.github\//.test(norm);
 }
 
 // '' if the block is a single host command (OK); else a short reason string.

@@ -138,8 +138,8 @@ When posting review comments to PR:
    ```
 
    - `<model_name>`: state your exact model name as defined in your system instructions. Do not guess.
-   - `<tool_name>`: the **Tool name** value from the Quick Reference table above (currently `pr-review`). Use exactly that string.
-   - `<tool_version>`: the **Tool version** value from the Quick Reference table above (currently `v3.6.5`). Use exactly that string -- do not substitute a different version.
+   - `<tool_name>`: the **Tool name** value from the Quick Reference table above. Use exactly that string.
+   - `<tool_version>`: the **Tool version** value from the Quick Reference table above. Use exactly that string -- do not substitute a different version.
 4. **Post the full assembled body** — the assembler emits the always-visible header + TL;DR + Action Items, then the collapsed `<details>` sections (Intent, Validation) inside an outer `<details open>`. Do NOT condense or rewrite from memory.
 5. **ICM Comment is NOT posted to PR** — it is saved in `sections/90-icm.md` for manual copy-paste.
 

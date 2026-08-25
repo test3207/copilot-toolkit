@@ -9,7 +9,7 @@ This file is loaded into every chat as system instructions, so keep it terse.
 
 Drift gate: the toolkit ships `scripts/lint-public.ps1` (scans for host markers -
 internal org names, GUIDs, internal PR refs) and `scripts/lint-recipes.mjs` (flags
-multi-step inline `pwsh`/`bash` blocks in skill/prompt recipes - the "recipe glue =
+multi-step inline `pwsh`/`bash` blocks in recipe files - the "recipe glue =
 Node script" rule). Keep your consumer copy as-is - lint is intended for upstream-side
 use, not consumer-side. Your consumer is the right place for your real ADO org /
 tenant / GUIDs. Do NOT paste this template's filled-in version back upstream.
