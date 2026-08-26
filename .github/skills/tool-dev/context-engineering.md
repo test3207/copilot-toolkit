@@ -8,20 +8,11 @@ Design files around how agents consume them — not just how humans organize the
 | --- | --- | --- |
 | Prompt file (`.prompt.md`) | ~80 | Loaded permanently into session context |
 | Agent file (`.github/agents/`) | ~100 | Loaded permanently when subagent is invoked |
-| On-demand doc (`docs/tools/`) | ~150 | Read by main agent; competes with other context |
 | On-demand reference (workflow files) | ~120 | Read by subagents with smaller effective context |
 
 **YAML frontmatter** (between `---` delimiters) is excluded from line counts — it is metadata consumed by the runtime, not context content.
 
 When a file exceeds its budget: split into a directory + `index.md`.
-
-## Changelog Management
-
-Changelog sections grow without bound. To keep doc files within budget:
-
-- **Doc keeps latest version marker only**: `Latest: **X.Y** (date)` + bullet summary of that version's changes.
-- **Full history** lives in git (`git log -p -- <file>`). Review step 5 (dedup) uses `git log`, not the doc.
-- **Entry format**: concise bullets (~5 lines max per version).
 
 ## Extensibility Assessment
 

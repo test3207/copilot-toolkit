@@ -49,8 +49,9 @@
 # Architecture note:
 #   Prompt files (.prompt.md) are loaded into context permanently on use.
 #   Keep prompts SHORT — only decision rules, triggers, and workflow steps.
-#   Put detailed knowledge (syntax, examples, patterns) in docs/tools/<name>.md
-#   and let the agent read_file on demand. This avoids wasting context tokens.
+#   Put detailed knowledge (syntax, examples, patterns) in a skill or workflow
+#   file and let the agent read_file on demand. This avoids wasting context
+#   tokens. Design rationale belongs in the commit and the issue, not a file.
 #
 description: Template prompt
 tools: ['vscode', 'execute', 'read', 'edit', 'search', 'web', 'browser', 'agent', 'todo']
