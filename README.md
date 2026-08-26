@@ -13,7 +13,7 @@ License: MIT.
 | `.github/skills/<tool>/SKILL.md` | Reusable skills (entry file each). VS Code default discovery picks these up when you open this repo as a workspace. |
 | `.github/agents/<name>.md` | Subagent workers used by the skills. VS Code default discovery picks these up too. |
 | `.github/prompts/<name>.prompt.md` | Thin-shim slash-command entry points (`/dep`, `/pr-review`, `/work`, `/tool-dev`, `/onboard-repo`). Each shim owns the MCP `tools:` allowlist and delegates the workflow body to the matching skill. Consumers discover these via `chat.promptFilesLocations` (see `INSTALL.md`). |
-| `scripts/` | Helper scripts (`lint-public.ps1`, `parse-input.mjs`, `run-safe.ps1`, `toolkit-check.ps1`). |
+| `scripts/` | Helper scripts (`lint-public.ps1`, `parse-input.mjs`, `run-safe.mjs`, `toolkit-check.ps1`). |
 | `templates/` | Starter files for new consumers (`_template.prompt.md`, `template-skill/`, `copilot-instructions.template.md`). |
 | `install/` | Install helpers (`sync.ps1`, `sync.sh`, `settings-snippet.jsonc`) for sync mode + the `.vscode/settings.json` snippet shared by both mount modes. See `INSTALL.md`. |
 

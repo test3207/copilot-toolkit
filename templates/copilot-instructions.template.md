@@ -49,10 +49,10 @@ or auth prompt = silent hang.
 - Always `git --no-pager <cmd>`. Never bare `git log` / `git diff` / `git show`.
 - Nested pwsh: pass `-NonInteractive -NoProfile` (Read-Host then throws instead of
   pending).
-- Wrap unknown-duration / external commands in `.copilot-toolkit/scripts/run-safe.ps1` (hard
+- Wrap unknown-duration / external commands in `.copilot-toolkit/scripts/run-safe.mjs` (hard
   timeout + closed stdin + pager defang).
-  - Usage: `pwsh -File .copilot-toolkit/scripts/run-safe.ps1 -Command "<cmd>" -TimeoutSec <n>`
-  - Returns `124` on timeout (process killed).
+  - Usage: `node .copilot-toolkit/scripts/run-safe.mjs --command "<cmd>" --timeout-sec <n>`
+  - Returns `124` on timeout (process tree killed).
 - **No inline temp scripts -- write a `.mjs`, then run it.** Applies to BOTH committed
   recipe glue AND runtime ad-hoc / throwaway probes. If logic needs more than a single
   command (loops, JSON parsing, multi-step git, conditionals), write a Node ES-module to
