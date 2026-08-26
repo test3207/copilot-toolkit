@@ -83,10 +83,11 @@ consumer, existing consumer, submodule vs sync, upgrade, uninstall) with
 exact commands and verification steps. The copy-paste settings snippet lives
 at [`install/settings-snippet.jsonc`](install/settings-snippet.jsonc).
 
-Short version (submodule mode):
+Short version (submodule mode) -- pick a tag from
+[Releases](https://github.com/test3207/copilot-toolkit/releases):
 
 ```pwsh
-git submodule add -b v0.1.0 https://github.com/test3207/copilot-toolkit.git .copilot-toolkit
+git submodule add -b <tag> https://github.com/test3207/copilot-toolkit.git .copilot-toolkit
 ```
 
 then add to the consumer's `.vscode/settings.json`:
