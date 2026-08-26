@@ -10,18 +10,9 @@ tools:
   - browser
   - agent
   - todo
-  # MCP server names below (ado-1, ado-2) are neutral placeholders. Configure
-  # your `.vscode/mcp.json` to match — see INSTALL.md "MCP server naming
-  # convention". GitHub-only / generic-git consumers can ignore the ADO entries
-  # (they are silently dropped if the server is not configured).
-  - ado-1/repo_get_repo_by_name_or_id
-  - ado-2/repo_get_repo_by_name_or_id
-  - ado-2/wit_get_work_item
 ---
 
-Onboard-repo entry point. Owns the MCP `tools:` allowlist (above; ADO MCP entries supply the ADO provider's `getRepoMetadata` + WI-link `resolveOwnership` recipes). The workflow body lives in skill [onboard-repo](../skills/onboard-repo/SKILL.md) — this prompt is a thin shim.
-
-The `tools:` block carries the union of all supported providers' MCP tools; consumers that only use GitHub or generic git can ignore the unused ADO entries (no install impact — VS Code silently drops unavailable tools).
+Onboard-repo entry point. The workflow body lives in skill [onboard-repo](../skills/onboard-repo/SKILL.md) — this prompt is a thin shim.
 
 ## Commands
 

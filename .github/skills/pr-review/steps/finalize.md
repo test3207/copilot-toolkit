@@ -58,7 +58,7 @@ Branch on `postMode`:
 
 When posting, run the **postComment** recipe for the access method resolved in Step 0 (from `providers/{pr-platform}.md`):
 
-- `mcp` / `cli` / `rest`: post via that method's recipe. For `mcp`, fall through to the REST recipe only if the call fails for an auth / tenant / availability reason, or when the provider's Note flags a ctx tradeoff worth taking.
+- `mcp` / `cli` / `rest`: post via that method's recipe. For `mcp`, fall through to the REST recipe only if the call fails for an auth / tenant / availability reason, or when the provider's Note flags a ctx tradeoff worth taking. An MCP tool the consumer has not wired counts as an availability failure, so the fall-through is mandatory rather than optional there.
 
 ### 9.3 Remove the isolated worktree (unconditional finalizer)
 

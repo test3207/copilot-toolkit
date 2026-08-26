@@ -6,12 +6,12 @@ user-invocable: false
 
 # Tool development (meta)
 
-Workspace standards for creating, updating, and reviewing tools. Host-agnostic body; the consuming prompt owns the MCP `tools:` allowlist (Dev/debug tools used when developing or testing other tools).
+Workspace standards for creating, updating, and reviewing tools. Host-agnostic body; the consuming prompt owns the `tools:` allowlist.
 
 ## When to use this skill
 
 - The caller says "create tool <name>", "update tool <name>", "review tool <name>", or runs `/tool-dev create|update|review <name>`.
-- The caller's entry prompt has set up the MCP tool allowlist (this skill itself declares no `tools`; the consuming prompt owns the allowlist).
+- The caller's entry prompt owns the `tools:` allowlist; this skill declares no `tools` of its own.
 - The consumer has `.github/prompts/`, `.github/agents/`, and `.github/skills/`.
 
 When NOT to use it:
@@ -42,7 +42,7 @@ When NOT to use it:
   - **Main-agent-loaded** (prompt, workflow main file, on-every-run): prompt ~80, workflow ~120. **Strict** — exceeded = split.
   - **Subagent-loaded / on-demand** (reference, rules, anti-patterns, decision tables, schemas): no hard limit — fresh window per dispatch. Budget by readability instead.
 - **Anti-patterns / rules / catalogs live in separate files** — NEVER inline anti-pattern catalogs, smell lists, or rule sets into a main-agent-loaded workflow or prompt. They go in `<skill>/anti-patterns/*.md` or `rules.md` and are loaded by subagents (or by the main agent on explicit step-scoped trigger).
-- **Least-privilege tools** — each tool's prompt declares only needed tools. Exception: the tool-dev prompt itself carries extra MCP tools (marked `# Dev/debug`) for developing/testing other tools.
+- **Least-privilege tools** — each tool's prompt declares only needed tools.
 - **External-endpoint integration (runtime ≠ metadata)** — adding or changing an external endpoint the agent must reach (new Kusto cluster / database, new ADO org, new ICM tenant, new MCP service) requires updates in **all four** layers in the same commit:
   1. `.vscode/mcp.json` — server entry (separate entry per fixed endpoint is preferred over a re-prompted `${input:...}`)
   2. `.github/copilot-instructions.md` — `## MCP Server Mapping` table

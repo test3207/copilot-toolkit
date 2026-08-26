@@ -23,7 +23,7 @@ Every `providers/{name}.md` MUST contain these sections, in this order, with the
 
 Optional sections:
 
-- `## mcpTools` — if the provider needs MCP tools (not terminal-only), list the tool IDs the consuming prompt's `tools:` allowlist must contain. The orchestrator surfaces a warning if any required tool is missing from the prompt's `tools:` block.
+- `## mcpTools` — if the provider needs MCP tools (not terminal-only), list the tool IDs the consuming prompt's `tools:` allowlist must contain. The orchestrator STOPs if any required tool is missing from the prompt's `tools:` block; see Step 3 of the skill.
 - `## downstreamPromptUpdates` — if onboarding a repo on this host requires editing a consuming prompt's `tools:` allowlist (e.g. to add a per-org ADO MCP server), document the edit here.
 
 ### Standard `repoInput` object

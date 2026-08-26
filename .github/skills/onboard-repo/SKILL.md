@@ -11,7 +11,7 @@ Add a new repository as a git submodule with registry entry and tool integration
 ## When to use this skill
 
 - The caller says "onboard repo <url>", "add a submodule", "register this repo", or runs `/onboard-repo`.
-- The caller's entry prompt has set up the MCP tool allowlist (this skill itself declares no `tools`; the consuming prompt owns the allowlist).
+- The caller's entry prompt owns the `tools:` allowlist; this skill declares no `tools` of its own.
 - The consumer has writable `workflows/registry/` directory and a `workflows/registry/index.md` to append a row to.
 
 When NOT to use it:
@@ -64,7 +64,7 @@ Prints `{ name, path, cloneUrl, branch }`.
 
 Run the **getRepoMetadata** recipe. Record the platform identifiers it returns (`repo-guid` for ADO, `defaultBranch` for any provider, etc.) for use in the registry entry.
 
-If the provider declares `mcpTools` and any required tool ID is missing from the consuming prompt's `tools:` allowlist, STOP and surface the gap. The user must add the tool to the entry prompt's `tools:` list and reload before continuing.
+If the provider declares `mcpTools` and any required tool ID is missing from the consuming prompt's `tools:` allowlist, STOP and surface the gap. The toolkit ships no MCP entries, so this gate fires for every provider that needs them until the consumer adds those tools to **their own copy** of the prompt and reloads. Do not edit the shipped prompt to satisfy it.
 
 ### 4. Resolve ownership (provider)
 
@@ -135,7 +135,7 @@ Show:
 ## Rules
 
 - Skill body is HOST-AGNOSTIC. Any VCS-host-specific recipe (URL detection, repo metadata, ownership) belongs in `providers/<name>.md`, never in the steps above.
-- The consumer's entry prompt owns the `tools:` allowlist (MCP tool whitelist). This skill itself declares no `tools` — by design.
+- The consumer's entry prompt owns the `tools:` allowlist. This skill itself declares no `tools` — by design.
 - `generic-git` is always last in the dispatch order and matches any URL that looks like a git remote.
 
 ## References

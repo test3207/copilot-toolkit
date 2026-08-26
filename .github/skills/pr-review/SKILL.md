@@ -11,7 +11,7 @@ Review a pull request end-to-end. Host-agnostic body; PR-host-specific recipes (
 ## When to use this skill
 
 - The caller says "review pr <id>", "review this PR", "check PR !123", etc.
-- The caller's entry prompt has set up the MCP tool allowlist (this skill itself declares no `tools`; the consuming prompt owns the allowlist).
+- The caller's entry prompt owns the `tools:` allowlist; this skill declares no `tools` of its own.
 - The repo context resolves either way: a registry entry matched it (**registry mode**), OR the entry prompt derived it from the git remote + optional `.github/pr-review.json` (**derive mode**). Both yield a `repoContext` with a `pr-platform` field (defaults to `ado` for back-compat).
 
 When NOT to use it:
@@ -45,7 +45,7 @@ Performed by the entry prompt, then handed to this skill. Two modes, one output 
 2. **Registry-first**: read `workflows/registry/index.md` and try to match the repo. If matched, read `workflows/registry/<matched-repo>.md` for full metadata → `repoContext` (registry mode; unchanged behavior).
 3. **Derive-fallback** (only when no registry index exists, or no entry matches): build `repoContext` at runtime — `node .copilot-toolkit/scripts/derive-repo-context.mjs "$(git --no-pager remote get-url origin)"` for `{ platform, org/project/repoName | owner/repoName }`; `path = .`; merge any [`.github/pr-review.json`](#optional-githubpr-reviewjson) fields; auto-detect coding-standards / anti-pattern language packs from the diff (see [steps/analyze.md](./steps/analyze.md) Step 6). If `platform == unknown` and no config file supplies one, STOP.
 4. Read `repoContext.pr-platform` (default `ado`). Load [providers/{pr-platform}.md](./providers/) — every PR-host-specific recipe (fetch, post, URL format, auto-link rules) comes from this file. The workflow body is host-agnostic.
-5. **Preflight + access method**: run `node .copilot-toolkit/scripts/preflight.mjs --platform {pr-platform} --mcp-configured <ado-repo-server present?>`. Resolve the provider access method (`ado-access` / `gh-access`) = `.github/pr-review.json` override else the report's `access.recommended`. A missing hard dep (node / git, or the platform credential `az`/`gh`) STOPS with remediation -- there is no offline mode. See [providers/{pr-platform}.md](./providers/) → `accessMethods`.
+5. **Preflight + access method**: run `node .copilot-toolkit/scripts/preflight.mjs --platform {pr-platform} --mcp-configured <did the consumer set `ado-access: "mcp"` in `.github/pr-review.json`?>`. The shipped prompts grant no MCP tools, so naming a server in the registry does not make one reachable -- only the consumer's own wiring does, and declaring it is how they say so. Resolve the provider access method (`ado-access` / `gh-access`) = `.github/pr-review.json` override else the report's `access.recommended`. A missing hard dep (node / git, or the platform credential `az`/`gh`) STOPS with remediation -- there is no offline mode. See [providers/{pr-platform}.md](./providers/) → `accessMethods`.
 6. **Post-mode**: run `node .copilot-toolkit/scripts/pr-review-config.mjs resolve --repo-path {path} [--post-mode <cli flag>]` → `postMode` (`confirm` default | `auto` | `skip`), which gates Step 9.2. Precedence: CLI `--auto`/`--confirm`/`--skip-post` > machine-local `.github/pr-review.local/config.json` > `confirm`. On `firstRun: true`, surface the returned `notice` once. See [Machine-local `.github/pr-review.local/`](#machine-local-githubpr-reviewlocal).
 
 ## Optional `.github/pr-review.json`
@@ -147,7 +147,7 @@ When posting review comments to PR:
 
 - Skill body and all files in this directory are HOST-AGNOSTIC. Any host-specific recipe (URL format, fetch / post, auto-link rules) belongs in `providers/<name>.md`, never in `workflow.md` / `reference.md` / `rules.md` / `decision.md`.
 - Subagents under `{toolkit-root}/agents/pr-*.md` read this skill's files via `{toolkit-root}/skills/pr-review/...` paths (where `{toolkit-root}` is the path the entry prompt resolved). When moving files inside this skill, update the subagent path refs.
-- The consumer's entry prompt owns the `tools:` allowlist (MCP tool whitelist). This skill itself declares no `tools` — by design.
+- The consumer's entry prompt owns the `tools:` allowlist. This skill itself declares no `tools` — by design.
 
 ## References
 
