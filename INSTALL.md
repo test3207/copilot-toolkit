@@ -21,10 +21,10 @@ The consumer's own `.github/skills/`, `.github/agents/`, and
 `.github/prompts/` keep working via VS Code's default discovery -- nothing in
 this toolkit clobbers them.
 
-Every snippet below writes `<tag>` where a release tag belongs. Pick one from
+Where a release tag belongs, this document writes a placeholder -- usually
+`<tag>`, sometimes `vX.Y.Z`. Pick a real tag from
 [Releases](https://github.com/test3207/copilot-toolkit/releases) and substitute
-it -- this document never names a specific version, so there is nothing here to
-go stale.
+it. No specific version is named anywhere here, so there is nothing to go stale.
 
 Before picking a scenario, skim **MCP server naming convention** below -- the
 shipped prompts use neutral server names (`ado-1`, `ado-2`, `kusto-1`,
