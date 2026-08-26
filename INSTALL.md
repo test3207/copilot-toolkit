@@ -262,7 +262,15 @@ git commit -m "Sync copilot-toolkit -> <tag>"
 1. Reload VS Code.
 2. Trigger a representative skill end-to-end (the consumer's repo-specific
    smoke test list, if any).
-3. If a skill misbehaves: check the upstream changelog between the previous
+3. **Check your own instructions file for helper paths that moved.** The toolkit
+   does not write to your `.github/copilot-instructions.md`, so anything you
+   copied from `templates/copilot-instructions.template.md` -- or any prose or
+   recipe of your own that invokes a `scripts/` helper -- keeps naming whatever
+   path was current when you wrote it. Grep your repo for `.copilot-toolkit/scripts/`
+   and confirm each hit still exists at the tag you just moved to; a stale
+   invocation fails at run time, and a stale one inside a gate recipe can fail
+   *open*. The tag annotation lists any helper renamed or removed in that release.
+4. If a skill misbehaves: check the upstream changelog between the previous
    tag and the new tag, then either roll back (Scenario 6) or file an issue
    upstream.
 

@@ -9,7 +9,10 @@
 //
 // What it guarantees about the child process:
 //   - stdin is closed: any prompt reaches EOF and fails instead of pending.
-//   - PowerShell -NonInteractive (Windows): Read-Host / Get-Credential THROW instead of pending.
+//   - PowerShell 7 -NonInteractive (Windows): Read-Host / Get-Credential THROW instead of pending.
+//     Windows PowerShell 5.1 is never used as a fallback; if pwsh 7 is absent this exits 2.
+//   - On POSIX the child shell is /bin/sh -c, which has no -NonInteractive equivalent; the closed
+//     stdin and the timeout are what carry the guarantee there.
 //   - GIT_PAGER=cat / PAGER=cat: git/less/more never opens a pager.
 //   - GIT_TERMINAL_PROMPT=0: git refuses to prompt for credentials, fails fast.
 //   - Hard wall-clock timeout: the process tree is killed if it overruns the budget.
@@ -27,7 +30,8 @@ import path from 'node:path';
 
 function arg(flag, def) {
   const i = process.argv.indexOf(flag);
-  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : def;
+  const value = i >= 0 ? process.argv[i + 1] : undefined;
+  return value && !value.startsWith('--') ? value : def;
 }
 
 const command = arg('--command');
@@ -56,7 +60,9 @@ function realFile(p) {
 
 // Resolve an absolute executable rather than letting spawn search PATH: PowerShell 7 ships as an
 // MSI (Program Files\PowerShell\7) or as a Store package (Program Files\WindowsApps\...), and only
-// one of the two exists on any given machine.
+// one of the two exists on any given machine. Windows PowerShell 5.1 is deliberately NOT a
+// fallback -- the script it replaced spawned `pwsh`, so accepting 5.1 would silently run the
+// caller's command under a different language version.
 function resolveShell() {
   if (process.platform !== 'win32') {
     return { exe: '/bin/sh', args: ['-c', command] };
@@ -68,25 +74,40 @@ function resolveShell() {
   const candidates = [
     ...onPath,
     realFile(path.join(process.env.ProgramFiles || 'C:\\Program Files', 'PowerShell', '7', 'pwsh.exe')),
-    realFile(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')),
   ];
   const exe = candidates.find(Boolean);
   if (!exe) {
-    console.error('run-safe: no PowerShell executable found on PATH, in Program Files\\PowerShell\\7, or in System32.');
+    console.error(
+      'run-safe: PowerShell 7 not found. Looked for a non-empty pwsh.exe on PATH and in\n' +
+        '  Program Files\\PowerShell\\7. Install PowerShell 7 (winget install Microsoft.PowerShell).'
+    );
     process.exit(2);
   }
   return { exe, args: ['-NonInteractive', '-NoProfile', '-NoLogo', '-Command', command] };
 }
 
 const captured = !outputFile;
-if (captured) outputFile = path.join(os.tmpdir(), `run-safe-${process.pid}-${Date.now()}.out`);
+// A private directory, not a guessable name in a shared /tmp: opening a predictable path with 'w'
+// follows a pre-planted symlink and truncates its target.
+const tempDir = captured ? fs.mkdtempSync(path.join(os.tmpdir(), 'run-safe-')) : null;
+if (captured) outputFile = path.join(tempDir, 'out');
 const errFile = `${outputFile}.err`;
 
-function head(file, lines = 5) {
+// Bounded read: the timeout exists to contain runaway output, so the diagnostic must not try to
+// load it all just to print five lines.
+function head(file, lines = 5, bytes = 8192) {
+  let fd;
   try {
-    return fs.readFileSync(file, 'utf8').split(/\r?\n/).slice(0, lines).join('\n');
+    fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(bytes);
+    const read = fs.readSync(fd, buf, 0, bytes, 0);
+    return buf.subarray(0, read).toString('utf8').split(/\r?\n/).slice(0, lines).join('\n');
   } catch {
     return '';
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch { /* already closed */ }
+    }
   }
 }
 
@@ -95,9 +116,7 @@ function cleanup(outFd, errFd) {
     try { fs.closeSync(fd); } catch { /* already closed */ }
   }
   if (captured) {
-    for (const f of [outputFile, errFile]) {
-      try { fs.rmSync(f, { force: true }); } catch { /* best effort */ }
-    }
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* best effort */ }
   }
 }
 
@@ -119,25 +138,32 @@ function killTree() {
   if (process.platform === 'win32') {
     try {
       execFileSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], { stdio: 'ignore' });
-      return;
+      return true;
     } catch { /* fall through to the plain kill below */ }
     child.kill();
-    return;
+    return false;
   }
   try {
     process.kill(-child.pid, 'SIGKILL');
+    return true;
   } catch {
     child.kill('SIGKILL');
+    return false;
   }
 }
 
 let timedOut = false;
+let treeKilled = true;
 const timer = setTimeout(() => {
   timedOut = true;
-  killTree();
+  treeKilled = killTree();
 }, timeoutSec * 1000);
 
+// 'close' still fires after 'error', so without this the spawn-failure exit code is clobbered and
+// the close path reads files cleanup() has already removed.
+let errored = false;
 child.on('error', (err) => {
+  errored = true;
   clearTimeout(timer);
   console.error(`run-safe: failed to start "${exe}": ${err.message}`);
   cleanup(outFd, errFd);
@@ -145,6 +171,7 @@ child.on('error', (err) => {
 });
 
 child.on('close', (code, signal) => {
+  if (errored) return;
   clearTimeout(timer);
 
   if (timedOut) {
@@ -152,6 +179,7 @@ child.on('close', (code, signal) => {
       `TIMEOUT after ${timeoutSec}s. Likely stuck on an interactive prompt OR genuinely slow.\n` +
         `Command : ${command}\n` +
         `WorkDir : ${workingDir}\n` +
+        (treeKilled ? '' : 'WARNING : could not kill the process tree; grandchildren may still be running.\n') +
         `--- partial stdout (head) ---\n${head(outputFile)}\n` +
         `--- partial stderr (head) ---\n${head(errFile)}`
     );

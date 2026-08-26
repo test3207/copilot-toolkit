@@ -52,7 +52,7 @@ or auth prompt = silent hang.
 - Wrap unknown-duration / external commands in `.copilot-toolkit/scripts/run-safe.mjs` (hard
   timeout + closed stdin + pager defang).
   - Usage: `node .copilot-toolkit/scripts/run-safe.mjs --command "<cmd>" --timeout-sec <n>`
-  - Returns `124` on timeout (process tree killed).
+  - Returns `124` on timeout (process killed).
 - **No inline temp scripts -- write a `.mjs`, then run it.** Applies to BOTH committed
   recipe glue AND runtime ad-hoc / throwaway probes. If logic needs more than a single
   command (loops, JSON parsing, multi-step git, conditionals), write a Node ES-module to

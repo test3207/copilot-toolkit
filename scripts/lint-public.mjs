@@ -24,7 +24,7 @@
 //
 // Usage:
 //   node scripts/lint-public.mjs --path .github,scripts,templates,install,INSTALL.md,README.md
-//   node scripts/lint-public.mjs --path dist --exclude "*examples/private/*"
+//   node scripts/lint-public.mjs --path dist --exclude "*private*"
 //
 // Options:
 //   --path <a,b,c>          files or directories to scan; directories are walked recursively.
@@ -49,9 +49,8 @@ import { fileURLToPath } from 'node:url';
 function args(flag, def) {
   const out = [];
   for (let i = 0; i < process.argv.length; i++) {
-    if (process.argv[i] === flag && process.argv[i + 1]) {
-      out.push(...process.argv[i + 1].split(',').filter(Boolean));
-    }
+    const value = process.argv[i] === flag ? process.argv[i + 1] : undefined;
+    if (value && !value.startsWith('--')) out.push(...value.split(',').filter(Boolean));
   }
   return out.length ? out : def;
 }
@@ -104,13 +103,23 @@ function shouldExclude(fullPath) {
 }
 
 const files = [];
+// PowerShell skipped .git because Get-ChildItem ignores the Windows hidden attribute, which git
+// sets on that directory. Node has no portable way to read that attribute, and skipping every
+// dot-name instead would silently drop .github -- a false negative in a leak gate. Name the
+// never-shipped directory instead.
+const skipDirs = new Set(['.git']);
+
 function walk(dir) {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  // Files before subdirectories, matching Get-ChildItem -Recurse -File's ordering.
+  for (const entry of entries) {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) walk(full);
-    else if (extensions.includes(path.extname(entry.name).toLowerCase()) && !shouldExclude(full)) {
+    if (!entry.isDirectory() && extensions.includes(path.extname(entry.name).toLowerCase()) && !shouldExclude(full)) {
       files.push(full);
     }
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory() && !skipDirs.has(entry.name)) walk(path.join(dir, entry.name));
   }
 }
 
@@ -124,9 +133,26 @@ for (const p of paths) {
   else if (!shouldExclude(full)) files.push(full);
 }
 
+// .NET's StreamReader detected the byte-order mark, so the PowerShell gate read UTF-16 files as
+// text. Decoding those as UTF-8 yields NUL-separated characters that no marker can match, which
+// would make the gate silently pass a file containing a leak.
+function readText(file) {
+  const buf = fs.readFileSync(file);
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return buf.subarray(2).toString('utf16le');
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    // swap16 mutates in place and rejects an odd length, so copy and drop a trailing stray byte.
+    const body = Buffer.from(buf.subarray(2, buf.length - ((buf.length - 2) % 2)));
+    return body.swap16().toString('utf16le');
+  }
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    return buf.subarray(3).toString('utf8');
+  }
+  return buf.toString('utf8');
+}
+
 let matchCount = 0;
 for (const file of files) {
-  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+  const lines = readText(file).split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     for (const m of lines[i].matchAll(regex)) {
       if (allowlist.has(m[0].toLowerCase())) continue;

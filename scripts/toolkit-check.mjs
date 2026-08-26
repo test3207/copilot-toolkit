@@ -38,7 +38,8 @@ import path from 'node:path';
 
 function arg(flag, def) {
   const i = process.argv.indexOf(flag);
-  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : def;
+  const value = i >= 0 ? process.argv[i + 1] : undefined;
+  return value && !value.startsWith('--') ? value : def;
 }
 
 const consumerRoot = arg('--consumer-root', '.');
@@ -46,30 +47,34 @@ const repo = arg('--repo', 'https://github.com/test3207/copilot-toolkit.git');
 const mountPath = arg('--mount-path', '.copilot-toolkit');
 const lockFile = arg('--lock-file', '.copilot-toolkit/.sync-lock');
 
-const info = (msg) => console.log(`[toolkit-check] ${msg}`);
-const err = (msg) => console.log(`[toolkit-check] ${msg}`);
+// Everything this script prints is a report for a human, on stdout, as Write-Host was.
+const say = (msg) => console.log(`[toolkit-check] ${msg}`);
 
 // Windows needs the extension: without shell:true Node does no PATHEXT resolution.
 const GIT = process.platform === 'win32' ? 'git.exe' : 'git';
 
 // Returns null instead of throwing, so callers can treat a non-zero git as "unknown" rather than
 // as a fatal error. The two call sites that must be fatal check for null themselves.
+let lastGitStatus = 0;
 function git(args, opts = {}) {
   try {
-    return execFileSync(GIT, args, {
+    const out = execFileSync(GIT, args, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
       windowsHide: true,
       ...opts,
     });
-  } catch {
+    lastGitStatus = 0;
+    return out;
+  } catch (e) {
+    lastGitStatus = typeof e.status === 'number' ? e.status : 1;
     return null;
   }
 }
 
 if (!fs.existsSync(consumerRoot) || !fs.statSync(consumerRoot).isDirectory()) {
-  err(`ConsumerRoot '${consumerRoot}' is not a directory.`);
+  say(`ConsumerRoot '${consumerRoot}' is not a directory.`);
   process.exit(2);
 }
 
@@ -91,13 +96,14 @@ if (isFile(lockFull)) {
   mode = 'sync';
   for (const line of fs.readFileSync(lockFull, 'utf8').split(/\r?\n/)) {
     if (line === '---') break;
-    const tag = /^tag=(.+)$/.exec(line);
+    // PowerShell -match is case-insensitive by default; keep that.
+    const tag = /^tag=(.+)$/i.exec(line);
     if (tag) currentTag = tag[1].trim();
-    const commit = /^commit=(.+)$/.exec(line);
+    const commit = /^commit=(.+)$/i.exec(line);
     if (commit) currentCommit = commit[1].trim();
   }
   if (!currentTag) {
-    err(`Lockfile '${lockFull}' has no tag= line. Malformed.`);
+    say(`Lockfile '${lockFull}' has no tag= line. Malformed.`);
     process.exit(1);
   }
 } else if (isFile(gmFull) && isDir(mountFull)) {
@@ -109,22 +115,22 @@ if (isFile(lockFull)) {
       git(['describe', '--tags'], { cwd: mountFull });
     currentTag = describe ? describe.trim() : '<unknown>';
     const head = git(['rev-parse', '--short', 'HEAD'], { cwd: mountFull });
-    currentCommit = head ? head.trim() : null;
+    currentCommit = head ? head.trim() : '';
   }
 }
 
 if (!mode) {
-  err(`No copilot-toolkit consumer mount detected at '${rootFull}'.`);
-  err(`  Expected either '${lockFile}' (sync mode) or a '${mountPath}' entry in .gitmodules (submodule mode).`);
+  say(`No copilot-toolkit consumer mount detected at '${rootFull}'.`);
+  say(`  Expected either '${lockFile}' (sync mode) or a '${mountPath}' entry in .gitmodules (submodule mode).`);
   process.exit(1);
 }
 
 // --- upstream tag list ---------------------------------------------------
 
-info(`Querying upstream tags (${repo}) ...`);
+say(`Querying upstream tags (${repo}) ...`);
 const lsRemote = git(['ls-remote', '--tags', '--refs', repo, 'refs/tags/v*']);
 if (lsRemote === null) {
-  err('git ls-remote failed. Check network / repo URL.');
+  say(`git ls-remote failed (exit ${lastGitStatus}). Check network / repo URL.`);
   process.exit(1);
 }
 
@@ -135,7 +141,7 @@ for (const line of lsRemote.split(/\r?\n/)) {
 }
 
 if (upstreamTags.length === 0) {
-  err('Upstream has no vX.Y.Z tags. Check the repo URL.');
+  say('Upstream has no vX.Y.Z tags. Check the repo URL.');
   process.exit(1);
 }
 
