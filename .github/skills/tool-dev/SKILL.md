@@ -73,13 +73,13 @@ Then synthesize subagent findings into a single review report.
    - Verify outputs: if the target system can swallow exceptions (NoThrow, catch-all), plan explicit verification
    - Never plan to modify product/submodule code when the user asked for an independent tool
 3. **Extensibility gate**: IF creating knowledge file (catalogs, rules, patterns) → read [context-engineering.md](./context-engineering.md), assess growth trajectory, pick structure
-4. **Context design brief** — list workflow overview, each component (prompt, references, subagents) with estimated size and load timing, total context budget, design rationale and purpose. IF references/subagents involved → read [context-engineering.md](./context-engineering.md) + [subagent-design.md](./subagent-design.md) as design basis.
+4. **Context design brief** — list workflow overview, each component (prompt, references, subagents) with estimated size and load timing, total context budget, design rationale and purpose. Carry the brief into the commit message and the motivating issue; it is not persisted in a shipped file. IF references/subagents involved → read [context-engineering.md](./context-engineering.md) + [subagent-design.md](./subagent-design.md) as design basis.
 5. Create implementation — use `.copilot-toolkit/templates/_template.prompt.md` or `.copilot-toolkit/.github/agents/_template.md` as starting point (paths assume submodule / sync mount; if you self-host the toolkit as the workspace root, drop the `.copilot-toolkit/` prefix). Respect file size budgets. IF this edit states a fact → run the Single-Sourcing Check in [context-engineering.md](./context-engineering.md)
 6. IF any existing files overlap with the new tool → run Restructure Verification Checklist
 
 ## For "update":
 
-1. Read the tool's own files — its prompt, agent, and skill files
+1. Read the tool's entry point — its prompt file plus the skill's `SKILL.md`. Read any further file only at the step that needs it.
 2. **Context impact** — describe what changes, purpose, impact on context pressure (which components change size, does loading pattern change). IF references/workflows/subagents affected → read [context-engineering.md](./context-engineering.md).
 3. **Confirm Design Gate** — read [update-design-gate.md](./update-design-gate.md) and follow it exactly. IF Bug-fix: HARD STOP, no edits, end turn. IF Polish: print the polish line and proceed to step 4.
 4. Make changes — check file size budgets after edit; split if exceeded. IF this edit states a fact → run the Single-Sourcing Check in [context-engineering.md](./context-engineering.md)
@@ -88,7 +88,7 @@ Then synthesize subagent findings into a single review report.
 
 ## For "review":
 
-1. Read the tool's own files — its prompt, agent, and skill files
+1. Read the tool's entry point — its prompt file plus the skill's `SKILL.md`. The subagents in step 2 read the rest; do not front-load it here.
 2. Delegate in parallel via subagents:
    - Prompt validation (syntax, tools list correctness)
    - Context & workflow design (reference scoping, component budgets, loading efficiency)

@@ -75,7 +75,7 @@ References (`read file X`) load entire files into context. Design them carefully
 3. **Conditional loading** — references that only apply to certain paths use `IF <condition> → read <file>`. E.g., `IF creating catalog → read context-engineering.md`.
 4. **No circular references** — if A references B, B must NOT reference A (directly or transitively). Before adding a reference, trace the full chain and verify no cycles.
 5. **Max depth = 5** — reference chains (A→B→C→...) may go up to 5 levels deep. Beyond that, flatten the structure. At each level, prefer conditional loading to limit actual reads.
-6. **Reference budget per path** — calculate total lines for each workflow path (prompt base + all reads across all depths). Target: main agent path < 250 lines total, subagent path < 200 lines. Complex multi-step workflows with conditional references may exceed 250 if loads are step-scoped (not all read simultaneously); document actual budget in the tool's context table.
+6. **Reference budget per path** — calculate total lines for each workflow path (prompt base + all reads across all depths). Target: main agent path < 250 lines total, subagent path < 200 lines. Complex multi-step workflows with conditional references may exceed 250 if loads are step-scoped (not all read simultaneously).
 7. **Link visibility = read intent** — agents treat visible `[links](path)` and file names as implicit read targets. If a file is owned by a subagent, do NOT link or name it in the orchestrator prompt. Mention subagent-owned files only in the subagent's own agent file or workflow.
 
 ### Applying to Prompts
