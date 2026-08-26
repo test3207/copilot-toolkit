@@ -10,53 +10,9 @@ tools:
   - browser
   - agent
   - todo
-  # MCP server names below (ado-1, ado-2, incident-1, kusto-1) are neutral
-  # placeholders. Configure your `.vscode/mcp.json` to match — see INSTALL.md
-  # "MCP server naming convention". If you prefer real names, copy this prompt
-  # to your own `.github/prompts/` and adjust the entries.
-  #
-  # ado-1: primary ADO org (repo, PRs, code search, pipelines)
-  - ado-1/repo_get_repo_by_name_or_id
-  - ado-1/repo_list_repos_by_project
-  - ado-1/repo_get_pull_request_by_id
-  - ado-1/repo_list_pull_requests_by_repo_or_project
-  - ado-1/repo_list_pull_request_threads
-  - ado-1/repo_list_pull_request_thread_comments
-  - ado-1/repo_create_pull_request_thread
-  - ado-1/repo_update_pull_request_thread
-  - ado-1/repo_reply_to_comment
-  - ado-1/repo_update_pull_request
-  - ado-1/repo_search_commits
-  - ado-1/search_code
-  - ado-1/pipelines_get_build_status
-  - ado-1/pipelines_get_build_log
-  - ado-1/pipelines_get_build_log_by_id
-  - ado-1/pipelines_get_builds
-  # ado-2: secondary ADO org (cross-org work items, or repo ops for a second org)
-  - ado-2/wit_get_work_item
-  - ado-2/wit_get_work_items_batch_by_ids
-  - ado-2/search_code
-  - ado-2/wit_list_work_item_comments
-  - ado-2/wit_add_work_item_comment
-  - ado-2/repo_get_repo_by_name_or_id
-  - ado-2/repo_get_pull_request_by_id
-  - ado-2/repo_list_pull_requests_by_repo_or_project
-  - ado-2/repo_list_pull_request_threads
-  - ado-2/repo_list_pull_request_thread_comments
-  - ado-2/repo_create_pull_request_thread
-  - ado-2/repo_update_pull_request_thread
-  - ado-2/repo_reply_to_comment
-  - ado-2/repo_update_pull_request
-  # incident-1: incident-management MCP server (optional, for bug-fix PRs)
-  - incident-1/get_incident_details_by_id
-  - incident-1/get_ai_summary
-  # microsoft-docs: official Microsoft Learn docs MCP (optional)
-  - microsoft-docs/microsoft_docs_search
-  - microsoft-docs/microsoft_docs_fetch
-  - microsoft-docs/microsoft_code_sample_search
 ---
 
-PR review entry point. Owns the MCP `tools:` allowlist (above). The workflow body lives in skill [pr-review](../skills/pr-review/SKILL.md) — this prompt is a thin shim that resolves input and delegates.
+PR review entry point. The workflow body lives in skill [pr-review](../skills/pr-review/SKILL.md) — this prompt is a thin shim that resolves input and delegates.
 
 ## Usage
 

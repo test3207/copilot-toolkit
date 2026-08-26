@@ -11,7 +11,7 @@ Daily dev: Feature & Bug fix with tracked-item integration. Host-agnostic body; 
 ## When to use this skill
 
 - The caller says "start work on <id>", "fix bug <id>", "build feature <id>", or runs `/work start <id|url>`.
-- The caller's entry prompt has set up the MCP tool allowlist (this skill itself declares no `tools`; the consuming prompt owns the allowlist).
+- The caller's entry prompt owns the `tools:` allowlist; this skill declares no `tools` of its own.
 - The consumer has a registry entry for the repo containing an `issue-tracker` field (`ado` / `github` / future hosts). If missing, default to `ado` for back-compat.
 
 When NOT to use it:

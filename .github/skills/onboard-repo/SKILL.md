@@ -11,7 +11,7 @@ Add a new repository as a git submodule with registry entry and tool integration
 ## When to use this skill
 
 - The caller says "onboard repo <url>", "add a submodule", "register this repo", or runs `/onboard-repo`.
-- The caller's entry prompt has set up the MCP tool allowlist (this skill itself declares no `tools`; the consuming prompt owns the allowlist).
+- The caller's entry prompt owns the `tools:` allowlist; this skill declares no `tools` of its own.
 - The consumer has writable `workflows/registry/` directory and a `workflows/registry/index.md` to append a row to.
 
 When NOT to use it:

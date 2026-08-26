@@ -6,12 +6,12 @@ user-invocable: false
 
 # Tool development (meta)
 
-Workspace standards for creating, updating, and reviewing tools. Host-agnostic body; the consuming prompt owns the MCP `tools:` allowlist (Dev/debug tools used when developing or testing other tools).
+Workspace standards for creating, updating, and reviewing tools. Host-agnostic body; the consuming prompt owns the `tools:` allowlist.
 
 ## When to use this skill
 
 - The caller says "create tool <name>", "update tool <name>", "review tool <name>", or runs `/tool-dev create|update|review <name>`.
-- The caller's entry prompt has set up the MCP tool allowlist (this skill itself declares no `tools`; the consuming prompt owns the allowlist).
+- The caller's entry prompt owns the `tools:` allowlist; this skill declares no `tools` of its own.
 - The consumer has `.github/prompts/`, `.github/agents/`, and `.github/skills/`.
 
 When NOT to use it:

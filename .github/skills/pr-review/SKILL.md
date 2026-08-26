@@ -11,7 +11,7 @@ Review a pull request end-to-end. Host-agnostic body; PR-host-specific recipes (
 ## When to use this skill
 
 - The caller says "review pr <id>", "review this PR", "check PR !123", etc.
-- The caller's entry prompt has set up the MCP tool allowlist (this skill itself declares no `tools`; the consuming prompt owns the allowlist).
+- The caller's entry prompt owns the `tools:` allowlist; this skill declares no `tools` of its own.
 - The repo context resolves either way: a registry entry matched it (**registry mode**), OR the entry prompt derived it from the git remote + optional `.github/pr-review.json` (**derive mode**). Both yield a `repoContext` with a `pr-platform` field (defaults to `ado` for back-compat).
 
 When NOT to use it:
