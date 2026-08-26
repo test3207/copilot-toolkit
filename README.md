@@ -13,7 +13,7 @@ License: MIT.
 | `.github/skills/<tool>/SKILL.md` | Reusable skills (entry file each). VS Code default discovery picks these up when you open this repo as a workspace. |
 | `.github/agents/<name>.md` | Subagent workers used by the skills. VS Code default discovery picks these up too. |
 | `.github/prompts/<name>.prompt.md` | Thin-shim slash-command entry points (`/dep`, `/pr-review`, `/work`, `/tool-dev`, `/onboard-repo`). Each shim owns the MCP `tools:` allowlist and delegates the workflow body to the matching skill. Consumers discover these via `chat.promptFilesLocations` (see `INSTALL.md`). |
-| `scripts/` | Helper scripts (`lint-public.ps1`, `parse-input.mjs`, `run-safe.mjs`, `toolkit-check.mjs`). |
+| `scripts/` | Helper scripts (`lint-public.mjs`, `parse-input.mjs`, `run-safe.mjs`, `toolkit-check.mjs`). |
 | `templates/` | Starter files for new consumers (`_template.prompt.md`, `template-skill/`, `copilot-instructions.template.md`). |
 | `install/` | Install helpers (`sync.ps1`, `sync.sh`, `settings-snippet.jsonc`) for sync mode + the `.vscode/settings.json` snippet shared by both mount modes. See `INSTALL.md`. |
 
@@ -35,7 +35,7 @@ Before pushing a change, run the drift gate to catch any private /
 host-specific identifiers that snuck in:
 
 ```pwsh
-pwsh -File scripts/lint-public.ps1 -Path .github,scripts,templates,install,INSTALL.md,README.md
+node scripts/lint-public.mjs --path .github,scripts,templates,install,INSTALL.md,README.md
 ```
 
 ```pwsh
@@ -43,10 +43,10 @@ node scripts/lint-recipes.mjs
 ```
 
 Run both as separate commands (so neither exit code masks the other); each must exit `0`.
-`lint-public.ps1` output = a host-marker leak to sanitize; `lint-recipes.mjs` output = a
+`lint-public.mjs` output = a host-marker leak to sanitize; `lint-recipes.mjs` output = a
 multi-step inline `pwsh`/`bash` block in a recipe file that
 must move to a `scripts/<name>.mjs` (tool-dev's "recipe glue = Node script" rule).
-The `-Exclude` switch exists for documented exceptions only -- never use it to
+The `--exclude` switch exists for documented exceptions only -- never use it to
 silence a real leak.
 
 ### MCP server naming convention (in shipped prompts)
@@ -118,8 +118,8 @@ and bump explicitly; sync-mode consumers carry a version stamp in
 PRs welcome. Every PR that touches `.github/skills/`, `.github/agents/`,
 `scripts/`, `install/`, or any root markdown must:
 
-1. Pass `pwsh -File scripts/lint-public.ps1 -Path .github,scripts,templates,install,INSTALL.md,README.md`
-   (exit `0`, no `-Exclude`) AND `node scripts/lint-recipes.mjs` (exit `0`) — the latter
+1. Pass `node scripts/lint-public.mjs --path .github,scripts,templates,install,INSTALL.md,README.md`
+   (exit `0`, no `--exclude`) AND `node scripts/lint-recipes.mjs` (exit `0`) — the latter
    fails on multi-step inline `pwsh`/`bash` in recipe files ("recipe glue = Node script" rule).
 2. Keep documentation generic (placeholder org / repo / tenant names).
 3. Update the relevant `SKILL.md` if behavior changes.
