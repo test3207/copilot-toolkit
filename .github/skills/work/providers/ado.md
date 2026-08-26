@@ -2,6 +2,17 @@
 
 Concrete implementation of the issue-tracker contract for Azure DevOps. Default provider when registry omits `issue-tracker`.
 
+## What the toolkit does not guarantee
+
+Every operation in this file is an MCP call, and the toolkit ships no MCP wiring
+and no `tools:` entries for one. These tools reach the agent only if the consumer
+has added them to **their own copy** of `work.prompt.md`. There is no REST
+fallback for work-item operations: `scripts/ado-rest.mjs` covers repo and PR
+reads plus comment posting, nothing on the work-item side.
+
+So: if a required tool is unavailable, STOP and name the missing tool. Never
+continue on a tracked item that was not fetched.
+
 ## Required registry fields
 
 | Field | Notes |

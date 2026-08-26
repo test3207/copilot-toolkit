@@ -112,7 +112,7 @@ user with reason.
 
 - Skill body and all files in this directory are HOST-AGNOSTIC. Any tracker-specific recipe (URL format, fetch / create / link, commit-message suffix) belongs in `providers/<name>.md`, never in `feature.md` / `bugfix.md` / `shared.md` / `anti-patterns/`.
 - Subagents under `{toolkit-root}/agents/work-*.md` read this skill's files via `{toolkit-root}/skills/work/...` paths (where `{toolkit-root}` is the path the entry prompt resolved). When moving files inside this skill, update the subagent path refs.
-- The consumer's entry prompt owns the `tools:` allowlist (MCP tool whitelist). This skill itself declares no `tools` — by design.
+- The consumer's entry prompt owns the `tools:` allowlist. This skill itself declares no `tools` — by design.
 - The workflow body never names a specific incident system (ICM / OpsGenie / etc.). Consumers wire one in via the optional `incident-source` registry field; the bugfix workflow loads that consumer-owned file when present.
 
 ## References
