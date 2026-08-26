@@ -45,6 +45,6 @@ When the user runs `/tool-dev <action> <name> [user request text]`:
 1. Compute `$toolkitRoot = if (Test-Path '.copilot-toolkit/.github') { '.copilot-toolkit/.github' } else { '.github' }` — passed to the skill so subagents can locate `{toolkit-root}/skills/tool-dev/...` files at runtime.
 2. Validate `action` ∈ `{create, update, review}`; reject otherwise.
 3. Capture the freeform `user request text` (the sentence after `/tool-dev <action> <name>`, plus any quoted PR / WI / comment the user attached) — the Confirm Design Gate uses this to classify update intent, NOT the `${input:action}` slot.
-4. **Invoke skill `tool-dev`** with: `toolkit-root: $toolkitRoot`, `action`, `name`, `user request text`. Follow the skill's [SKILL.md](../skills/tool-dev/SKILL.md) — it owns the todo plan, the create / update / review step lists, the file-size budgets, the extensibility gate, the changelog growth-control rule, and the Confirm Design Gate.
+4. **Invoke skill `tool-dev`** with: `toolkit-root: $toolkitRoot`, `action`, `name`, `user request text`. Follow the skill's [SKILL.md](../skills/tool-dev/SKILL.md) — it owns the todo plan, the create / update / review step lists, the file-size budgets, the extensibility gate, and the Confirm Design Gate.
 
-For PR check-in (Step 8 of the `update` flow), use the ADO MCP tools above with repo / branch / project / org sourced from the consumer's local registry entry for the toolkit / scratch repo (e.g. `.github/prompts/workflows/registry/<your-toolkit-repo>.md`).
+For PR check-in (the last step of the `update` flow), use the ADO MCP tools above with repo / branch / project / org sourced from the consumer's local registry entry for the toolkit / scratch repo (e.g. `.github/prompts/workflows/registry/<your-toolkit-repo>.md`).
