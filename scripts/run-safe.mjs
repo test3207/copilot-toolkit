@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Run a command with hard timeout + closed stdin + pager defang.
 // Subagents and ad-hoc scripts call this instead of running raw commands so a
 // pager / Read-Host / Get-Credential prompt cannot make the process hang.
@@ -49,7 +50,9 @@ function arg(flag, def) {
 
 for (let i = 2; i < process.argv.length; i++) {
   const token = process.argv[i];
-  if (!token.startsWith('--')) continue;
+  if (!token.startsWith('--')) {
+    usage(`unexpected argument "${token}". Quote the whole command: --command "git status"`);
+  }
   if (!FLAGS.has(token)) usage(`unknown option "${token}". Known options: ${[...FLAGS].join(', ')}.`);
   i++;
 }
@@ -142,8 +145,14 @@ function cleanup(outFd, errFd) {
   }
 }
 
-const outFd = fs.openSync(outputFile, 'w');
-const errFd = fs.openSync(errFile, 'w');
+let outFd;
+let errFd;
+try {
+  outFd = fs.openSync(outputFile, 'w');
+  errFd = fs.openSync(errFile, 'w');
+} catch (e) {
+  usage(`cannot open output file "${outputFile}": ${e.message}`);
+}
 
 const child = spawn(exe, args, {
   cwd: workingDir,
@@ -180,6 +189,18 @@ const timer = setTimeout(() => {
   treeKilled = killTree();
 }, timeoutSec * 1000);
 
+// `detached` puts the POSIX child in its own process group, so it no longer receives the
+// terminal's Ctrl+C. Without this the wrapper would exit on SIGINT and leave the tree running,
+// which is the containment it exists to provide.
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    clearTimeout(timer);
+    killTree();
+    cleanup(outFd, errFd);
+    process.exit(128 + (sig === 'SIGINT' ? 2 : 15));
+  });
+}
+
 // 'close' still fires after 'error', so without this the spawn-failure exit code is clobbered and
 // the close path reads files cleanup() has already removed.
 let errored = false;
@@ -212,12 +233,15 @@ child.on('close', (code, signal) => {
   if (captured) {
     try { fs.closeSync(outFd); } catch { /* already closed */ }
     try { fs.closeSync(errFd); } catch { /* already closed */ }
-    process.stdout.write(fs.readFileSync(outputFile, 'utf8'));
+    const outText = fs.readFileSync(outputFile, 'utf8');
+    process.stdout.write(outText);
     const errText = fs.readFileSync(errFile, 'utf8');
     if (errText.length > 0) {
-      // The PowerShell version wrote this block with Write-Host, i.e. to stdout. Keep it there so
-      // a caller redirecting stdout to a file still captures the child's stderr.
-      process.stdout.write(`--- stderr ---\n${errText}`);
+      // The PowerShell version wrote this block with Write-Host, i.e. to stdout and always on a
+      // fresh line. Keep both, so a caller redirecting stdout to a file still captures stderr and
+      // the heading never runs into the last line of stdout.
+      const sep = outText.length > 0 && !outText.endsWith('\n') ? '\n' : '';
+      process.stdout.write(`${sep}--- stderr ---\n${errText}`);
     }
   }
   cleanup(outFd, errFd);

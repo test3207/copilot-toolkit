@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Scan files for private/business markers that must not appear in public toolkit content.
 //
 // Walks one or more paths (file or directory) and matches each line of every included file
@@ -69,14 +70,16 @@ function args(flag, def) {
 
 for (let i = 2; i < process.argv.length; i++) {
   const token = process.argv[i];
-  if (!token.startsWith('--')) continue;
+  if (!token.startsWith('--')) {
+    usage(`unexpected argument "${token}". Lists are comma-separated: --path a,b,c`);
+  }
   if (!FLAGS.has(token)) usage(`unknown option "${token}". Known options: ${[...FLAGS].join(', ')}.`);
   if (!VALUELESS.has(token)) i++;
 }
 
 const paths = args('--path', ['.']);
 const extensions = args('--extension', [
-  '.md', '.ps1', '.psm1', '.mjs', '.cjs', '.js', '.ts', '.json', '.jsonc', '.yml', '.yaml', '.txt',
+  '.md', '.ps1', '.psm1', '.sh', '.mjs', '.cjs', '.js', '.ts', '.json', '.jsonc', '.yml', '.yaml', '.txt',
 ]).map((e) => e.toLowerCase());
 const excludes = args('--exclude', []);
 const allowValues = args('--allow-value', []);
@@ -122,6 +125,14 @@ function shouldExclude(fullPath) {
   return excludeRegexes.some((r) => r.test(fullPath));
 }
 
+function isRegularFile(p) {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
 const files = [];
 // PowerShell skipped .git because Get-ChildItem ignores the Windows hidden attribute, which git
 // sets on that directory. Node has no portable way to read that attribute, and skipping every
@@ -134,9 +145,12 @@ function walk(dir) {
   // Files before subdirectories, matching Get-ChildItem -Recurse -File's ordering.
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
-    if (!entry.isDirectory() && extensions.includes(path.extname(entry.name).toLowerCase()) && !shouldExclude(full)) {
-      files.push(full);
-    }
+    if (entry.isDirectory()) continue;
+    if (!extensions.includes(path.extname(entry.name).toLowerCase()) || shouldExclude(full)) continue;
+    // Get-ChildItem -File enumerated regular files only. Reading a FIFO would block the gate
+    // forever, and a symlink has to be resolved before its target can be classified.
+    if (!isRegularFile(full)) continue;
+    files.push(full);
   }
   for (const entry of entries) {
     if (entry.isDirectory() && !skipDirs.has(entry.name)) walk(path.join(dir, entry.name));
@@ -153,18 +167,36 @@ for (const p of paths) {
   else if (!shouldExclude(full)) files.push(full);
 }
 
-// .NET's StreamReader detected the byte-order mark, so the PowerShell gate read UTF-16 files as
-// text. Decoding those as UTF-8 yields NUL-separated characters that no marker can match, which
-// would make the gate silently pass a file containing a leak.
+// .NET's StreamReader detected the byte-order mark, so the PowerShell gate read UTF-16 and UTF-32
+// files as text. Decoding those as UTF-8 yields NUL-separated characters that no marker can match,
+// which would make the gate silently pass a file containing a leak.
+// UTF-32 LE must be tested before UTF-16 LE: its BOM starts with the same two bytes.
+function decodeUtf32(buf, littleEndian) {
+  const units = Math.floor(buf.length / 4);
+  let out = '';
+  for (let i = 0; i < units; i++) {
+    const cp = littleEndian ? buf.readUInt32LE(i * 4) : buf.readUInt32BE(i * 4);
+    out += cp <= 0x10ffff ? String.fromCodePoint(cp) : '\uFFFD';
+  }
+  return out;
+}
+
 function readText(file) {
   const buf = fs.readFileSync(file);
-  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return buf.subarray(2).toString('utf16le');
-  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+  const b = (n) => buf[n];
+  if (buf.length >= 4 && b(0) === 0xff && b(1) === 0xfe && b(2) === 0x00 && b(3) === 0x00) {
+    return decodeUtf32(buf.subarray(4), true);
+  }
+  if (buf.length >= 4 && b(0) === 0x00 && b(1) === 0x00 && b(2) === 0xfe && b(3) === 0xff) {
+    return decodeUtf32(buf.subarray(4), false);
+  }
+  if (buf.length >= 2 && b(0) === 0xff && b(1) === 0xfe) return buf.subarray(2).toString('utf16le');
+  if (buf.length >= 2 && b(0) === 0xfe && b(1) === 0xff) {
     // swap16 mutates in place and rejects an odd length, so copy and drop a trailing stray byte.
     const body = Buffer.from(buf.subarray(2, buf.length - ((buf.length - 2) % 2)));
     return body.swap16().toString('utf16le');
   }
-  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+  if (buf.length >= 3 && b(0) === 0xef && b(1) === 0xbb && b(2) === 0xbf) {
     return buf.subarray(3).toString('utf8');
   }
   return buf.toString('utf8');

@@ -53,6 +53,9 @@ or auth prompt = silent hang.
   timeout + closed stdin + pager defang).
   - Usage: `node .copilot-toolkit/scripts/run-safe.mjs --command "<cmd>" --timeout-sec <n>`
   - Returns `124` on timeout (process killed).
+  - The child shell is PowerShell 7 on Windows and `/bin/sh` on POSIX, so a command written
+    in PowerShell syntax is not portable through this wrapper. On Windows it exits `2` if
+    PowerShell 7 is not installed rather than falling back to Windows PowerShell 5.1.
 - **No inline temp scripts -- write a `.mjs`, then run it.** Applies to BOTH committed
   recipe glue AND runtime ad-hoc / throwaway probes. If logic needs more than a single
   command (loops, JSON parsing, multi-step git, conditionals), write a Node ES-module to

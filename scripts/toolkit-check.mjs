@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Report whether a consumer repo's pinned copilot-toolkit version is behind upstream.
 //
 // Read-only check. Auto-detects which distribution mode the consumer uses for the
@@ -55,7 +56,7 @@ function arg(flag, def) {
 
 for (let i = 2; i < process.argv.length; i++) {
   const token = process.argv[i];
-  if (!token.startsWith('--')) continue;
+  if (!token.startsWith('--')) usage(`unexpected argument "${token}". Did you mean --consumer-root ${token}?`);
   if (!FLAGS.has(token)) usage(`unknown option "${token}". Known options: ${[...FLAGS].join(', ')}.`);
   i++;
 }
@@ -79,6 +80,8 @@ function git(args, opts = {}) {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
       windowsHide: true,
+      // An unreachable or auth-prompting remote must not hang the check.
+      timeout: 60000,
       ...opts,
     });
     lastGitStatus = 0;
@@ -132,7 +135,15 @@ if (isFile(lockFull)) {
       git(['describe', '--tags'], { cwd: mountFull });
     currentTag = describe ? describe.trim() : '<unknown>';
     const head = git(['rev-parse', '--short', 'HEAD'], { cwd: mountFull });
-    currentCommit = head ? head.trim() : '';
+    // The PowerShell version threw here when rev-parse produced nothing, which is the right
+    // outcome: an uninitialized submodule has no pinned version to report on, and continuing
+    // would print a confident DIVERGED for a mount that is not usable.
+    if (head === null) {
+      say(`'${mountFull}' is registered in .gitmodules but has no checked-out commit.`);
+      say('  Run: git submodule update --init');
+      process.exit(1);
+    }
+    currentCommit = head.trim();
   }
 }
 
@@ -187,39 +198,34 @@ console.log(`Upstream HEAD : ${latest}`);
 
 if (currentTag === latest) {
   console.log('Status        : UP TO DATE');
-  process.exit(0);
-}
-
-const pinnedIndex = sorted.indexOf(currentTag);
-if (pinnedIndex < 0) {
+} else if (sorted.indexOf(currentTag) < 0) {
   console.log(`Status        : DIVERGED -- pinned tag '${currentTag}' is not in the upstream tag list.`);
   console.log('                (Possible reasons: tag deleted upstream; consumer pinned to a pre-release / fork tag.)');
   console.log('');
   console.log('Latest 5 upstream tags:');
   for (const t of sorted.slice(0, 5)) console.log(`  ${t}`);
-  process.exit(0);
-}
-
-const behind = sorted.slice(0, pinnedIndex);
-console.log(`Status        : BEHIND BY ${behind.length} TAG(S)`);
-console.log('');
-console.log('Tags between pinned and latest (newest first):');
-for (const t of behind) console.log(`  ${t}`);
-
-console.log('');
-console.log('To upgrade:');
-if (mode === 'sync') {
-  // The port removed the implicit guarantee that the reader has pwsh, so name the runnable one.
-  console.log(
-    process.platform === 'win32'
-      ? `  pwsh -File ${mountPath}/install/sync.ps1 -Tag ${latest}`
-      : `  bash ${mountPath}/install/sync.sh --tag ${latest}`
-  );
-  console.log(`  git add ${mountPath}`);
-  console.log(`  git commit -m "Sync copilot-toolkit -> ${latest}"`);
 } else {
-  console.log(`  git -C ${mountPath} fetch --tags`);
-  console.log(`  git -C ${mountPath} checkout ${latest}`);
-  console.log(`  git add ${mountPath}`);
-  console.log(`  git commit -m "Upgrade copilot-toolkit submodule -> ${latest}"`);
+  const behind = sorted.slice(0, sorted.indexOf(currentTag));
+  console.log(`Status        : BEHIND BY ${behind.length} TAG(S)`);
+  console.log('');
+  console.log('Tags between pinned and latest (newest first):');
+  for (const t of behind) console.log(`  ${t}`);
+
+  console.log('');
+  console.log('To upgrade:');
+  if (mode === 'sync') {
+    // The port removed the implicit guarantee that the reader has pwsh, so name the runnable one.
+    console.log(
+      process.platform === 'win32'
+        ? `  pwsh -File ${mountPath}/install/sync.ps1 -Tag ${latest}`
+        : `  bash ${mountPath}/install/sync.sh --tag ${latest}`
+    );
+    console.log(`  git add ${mountPath}`);
+    console.log(`  git commit -m "Sync copilot-toolkit -> ${latest}"`);
+  } else {
+    console.log(`  git -C ${mountPath} fetch --tags`);
+    console.log(`  git -C ${mountPath} checkout ${latest}`);
+    console.log(`  git add ${mountPath}`);
+    console.log(`  git commit -m "Upgrade copilot-toolkit submodule -> ${latest}"`);
+  }
 }
