@@ -267,9 +267,10 @@ git commit -m "Sync copilot-toolkit -> <tag>"
    copied from `templates/copilot-instructions.template.md` -- or any prose or
    recipe of your own that invokes a `scripts/` helper -- keeps naming whatever
    path was current when you wrote it. Grep your repo for `.copilot-toolkit/scripts/`
-   and confirm each hit still exists at the tag you just moved to; a stale
+   and confirm each hit still exists at the tag you just moved to, and that its
+   options and exit codes still mean what your recipe assumes; a stale
    invocation fails at run time, and a stale one inside a gate recipe can fail
-   *open*. The tag annotation lists any helper renamed or removed in that release.
+   *open*.
 4. If a skill misbehaves: check the upstream changelog between the previous
    tag and the new tag, then either roll back (Scenario 6) or file an issue
    upstream.

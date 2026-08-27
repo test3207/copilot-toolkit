@@ -31,8 +31,8 @@
 //                           Repeatable. Default '.'.
 //   --extension <.a,.b>     file extensions to include. Repeatable. Default: markdown, scripts,
 //                           config text.
-//   --exclude <glob>        glob matched against the full path (* and ? only, case-insensitive).
-//                           Repeatable.
+//   --exclude <glob>        glob matched against the full path (* and ? only, case-insensitive;
+//                           PowerShell's [abc] classes are not supported). Repeatable.
 //   --allow-value <value>   literal matched-string value to exempt (case-insensitive string
 //                           equality, NOT regex). Repeatable.
 //   --include-self          by default this script auto-excludes its own file, because the marker
@@ -46,13 +46,32 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const FLAGS = new Set(['--path', '--extension', '--exclude', '--allow-value', '--include-self']);
+const VALUELESS = new Set(['--include-self']);
+
+function usage(message) {
+  console.error(`lint-public: ${message}`);
+  process.exit(2);
+}
+
+// A leak gate must fail closed on a usage error: a typo that silently fell back to the default
+// scope would report clean over the wrong tree.
 function args(flag, def) {
   const out = [];
   for (let i = 0; i < process.argv.length; i++) {
-    const value = process.argv[i] === flag ? process.argv[i + 1] : undefined;
-    if (value && !value.startsWith('--')) out.push(...value.split(',').filter(Boolean));
+    if (process.argv[i] !== flag) continue;
+    const value = process.argv[i + 1];
+    if (!value || value.startsWith('--')) usage(`${flag} requires a value.`);
+    out.push(...value.split(',').filter(Boolean));
   }
   return out.length ? out : def;
+}
+
+for (let i = 2; i < process.argv.length; i++) {
+  const token = process.argv[i];
+  if (!token.startsWith('--')) continue;
+  if (!FLAGS.has(token)) usage(`unknown option "${token}". Known options: ${[...FLAGS].join(', ')}.`);
+  if (!VALUELESS.has(token)) i++;
 }
 
 const paths = args('--path', ['.']);
@@ -88,7 +107,8 @@ const regex = new RegExp(pattern, 'gi');
 
 const selfPath = path.resolve(fileURLToPath(import.meta.url));
 
-// PowerShell -like semantics, restricted to the wildcards this gate documents.
+// PowerShell -like also supported [abc] character classes; this supports * and ? only, which is
+// what the usage above documents and what every in-repo invocation uses.
 const excludeRegexes = excludes.map(
   (g) =>
     new RegExp(
@@ -152,7 +172,9 @@ function readText(file) {
 
 let matchCount = 0;
 for (const file of files) {
-  const lines = readText(file).split(/\r?\n/);
+  // File.ReadLines treats a lone CR as a line break too; /\r?\n/ would fold a CR-only file into
+  // one line and report every hit at line 1.
+  const lines = readText(file).split(/\r\n|\r|\n/);
   for (let i = 0; i < lines.length; i++) {
     for (const m of lines[i].matchAll(regex)) {
       if (allowlist.has(m[0].toLowerCase())) continue;

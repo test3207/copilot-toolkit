@@ -21,6 +21,8 @@
 // Exit codes:
 //   0     success
 //   1+    child process exit code
+//   2     wrapper error (bad usage, or no PowerShell 7 on Windows). Ambiguous with a child that
+//         itself exits 2; wrapper errors always print a line prefixed "run-safe:" to stderr.
 //   124   timeout (Linux convention)
 
 import { spawn, execFileSync } from 'node:child_process';
@@ -28,10 +30,28 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+const FLAGS = new Set(['--command', '--timeout-sec', '--working-dir', '--output-file']);
+
+function usage(message) {
+  console.error(`run-safe: ${message}`);
+  process.exit(2);
+}
+
+// PowerShell's parameter binder rejected an unknown or valueless parameter; silently falling back
+// to a default would run the child under settings the caller did not ask for.
 function arg(flag, def) {
   const i = process.argv.indexOf(flag);
-  const value = i >= 0 ? process.argv[i + 1] : undefined;
-  return value && !value.startsWith('--') ? value : def;
+  if (i < 0) return def;
+  const value = process.argv[i + 1];
+  if (!value || value.startsWith('--')) usage(`${flag} requires a value.`);
+  return value;
+}
+
+for (let i = 2; i < process.argv.length; i++) {
+  const token = process.argv[i];
+  if (!token.startsWith('--')) continue;
+  if (!FLAGS.has(token)) usage(`unknown option "${token}". Known options: ${[...FLAGS].join(', ')}.`);
+  i++;
 }
 
 const command = arg('--command');
@@ -39,17 +59,13 @@ const timeoutSec = Number(arg('--timeout-sec', '60'));
 const workingDir = arg('--working-dir', process.cwd());
 let outputFile = arg('--output-file');
 
-if (!command) {
-  console.error('run-safe: --command is required');
-  process.exit(2);
-}
+if (!command) usage('--command is required.');
 if (!Number.isFinite(timeoutSec) || timeoutSec <= 0) {
-  console.error(`run-safe: --timeout-sec must be a positive number, got "${arg('--timeout-sec')}"`);
-  process.exit(2);
+  usage(`--timeout-sec must be a positive number, got "${arg('--timeout-sec')}".`);
 }
 
-// A zero-byte pwsh.exe on PATH is the WindowsApps execution alias, a reparse point that spawns,
-// exits 0 and runs nothing when launched from Node. Never accept it.
+// A pwsh.exe that cannot be stat'ed or reports zero bytes is the WindowsApps execution alias, a
+// reparse point that spawns, exits 0 and runs nothing when launched from Node. Never accept it.
 function realFile(p) {
   try {
     return fs.statSync(p).size > 0 ? p : null;
@@ -58,11 +74,12 @@ function realFile(p) {
   }
 }
 
-// Resolve an absolute executable rather than letting spawn search PATH: PowerShell 7 ships as an
-// MSI (Program Files\PowerShell\7) or as a Store package (Program Files\WindowsApps\...), and only
-// one of the two exists on any given machine. Windows PowerShell 5.1 is deliberately NOT a
-// fallback -- the script it replaced spawned `pwsh`, so accepting 5.1 would silently run the
-// caller's command under a different language version.
+// PowerShell 7 ships as an MSI under Program Files\PowerShell\7 or as a Store package under
+// Program Files\WindowsApps. Both put a real pwsh.exe on PATH -- the Store installer adds its
+// versioned package directory, and Program Files\WindowsApps itself cannot be enumerated by a
+// normal process (EPERM), so scanning PATH is the only way to reach the Store layout. Windows
+// PowerShell 5.1 is deliberately NOT a fallback: the script this replaced spawned `pwsh`, so
+// accepting 5.1 would silently run the caller's command under a different language version.
 function resolveShell() {
   if (process.platform !== 'win32') {
     return { exe: '/bin/sh', args: ['-c', command] };
@@ -78,13 +95,18 @@ function resolveShell() {
   const exe = candidates.find(Boolean);
   if (!exe) {
     console.error(
-      'run-safe: PowerShell 7 not found. Looked for a non-empty pwsh.exe on PATH and in\n' +
-        '  Program Files\\PowerShell\\7. Install PowerShell 7 (winget install Microsoft.PowerShell).'
+      'run-safe: PowerShell 7 not found. Looked for a non-empty pwsh.exe on every PATH entry\n' +
+        '  (this is what reaches a Store install) and in Program Files\\PowerShell\\7 (MSI install).\n' +
+        '  Install PowerShell 7: winget install Microsoft.PowerShell.'
     );
     process.exit(2);
   }
   return { exe, args: ['-NonInteractive', '-NoProfile', '-NoLogo', '-Command', command] };
 }
+
+// Resolve before creating anything: the exit-2 path above must not have truncated the caller's
+// --output-file or left a temp directory behind for a child that never ran.
+const { exe, args } = resolveShell();
 
 const captured = !outputFile;
 // A private directory, not a guessable name in a shared /tmp: opening a predictable path with 'w'
@@ -123,7 +145,6 @@ function cleanup(outFd, errFd) {
 const outFd = fs.openSync(outputFile, 'w');
 const errFd = fs.openSync(errFile, 'w');
 
-const { exe, args } = resolveShell();
 const child = spawn(exe, args, {
   cwd: workingDir,
   // Defanged interactive surfaces are inherited by the child via process env.
@@ -194,7 +215,9 @@ child.on('close', (code, signal) => {
     process.stdout.write(fs.readFileSync(outputFile, 'utf8'));
     const errText = fs.readFileSync(errFile, 'utf8');
     if (errText.length > 0) {
-      process.stderr.write(`--- stderr ---\n${errText}`);
+      // The PowerShell version wrote this block with Write-Host, i.e. to stdout. Keep it there so
+      // a caller redirecting stdout to a file still captures the child's stderr.
+      process.stdout.write(`--- stderr ---\n${errText}`);
     }
   }
   cleanup(outFd, errFd);

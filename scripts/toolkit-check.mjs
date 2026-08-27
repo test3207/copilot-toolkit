@@ -36,10 +36,28 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+const FLAGS = new Set(['--consumer-root', '--repo', '--mount-path', '--lock-file']);
+
+function usage(message) {
+  console.log(`[toolkit-check] ${message}`);
+  process.exit(2);
+}
+
+// PowerShell's parameter binder rejected an unknown or valueless parameter, and this script
+// documents exit 2 for exactly that.
 function arg(flag, def) {
   const i = process.argv.indexOf(flag);
-  const value = i >= 0 ? process.argv[i + 1] : undefined;
-  return value && !value.startsWith('--') ? value : def;
+  if (i < 0) return def;
+  const value = process.argv[i + 1];
+  if (!value || value.startsWith('--')) usage(`${flag} requires a value.`);
+  return value;
+}
+
+for (let i = 2; i < process.argv.length; i++) {
+  const token = process.argv[i];
+  if (!token.startsWith('--')) continue;
+  if (!FLAGS.has(token)) usage(`unknown option "${token}". Known options: ${[...FLAGS].join(', ')}.`);
+  i++;
 }
 
 const consumerRoot = arg('--consumer-root', '.');
@@ -50,15 +68,13 @@ const lockFile = arg('--lock-file', '.copilot-toolkit/.sync-lock');
 // Everything this script prints is a report for a human, on stdout, as Write-Host was.
 const say = (msg) => console.log(`[toolkit-check] ${msg}`);
 
-// Windows needs the extension: without shell:true Node does no PATHEXT resolution.
-const GIT = process.platform === 'win32' ? 'git.exe' : 'git';
-
 // Returns null instead of throwing, so callers can treat a non-zero git as "unknown" rather than
 // as a fatal error. The two call sites that must be fatal check for null themselves.
 let lastGitStatus = 0;
+let gitMissing = false;
 function git(args, opts = {}) {
   try {
-    const out = execFileSync(GIT, args, {
+    const out = execFileSync('git', args, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
@@ -68,6 +84,7 @@ function git(args, opts = {}) {
     lastGitStatus = 0;
     return out;
   } catch (e) {
+    if (e.code === 'ENOENT') gitMissing = true;
     lastGitStatus = typeof e.status === 'number' ? e.status : 1;
     return null;
   }
@@ -120,6 +137,10 @@ if (isFile(lockFull)) {
 }
 
 if (!mode) {
+  if (gitMissing) {
+    say('git was not found on PATH, so submodule mode could not be detected.');
+    process.exit(1);
+  }
   say(`No copilot-toolkit consumer mount detected at '${rootFull}'.`);
   say(`  Expected either '${lockFile}' (sync mode) or a '${mountPath}' entry in .gitmodules (submodule mode).`);
   process.exit(1);
@@ -130,13 +151,17 @@ if (!mode) {
 say(`Querying upstream tags (${repo}) ...`);
 const lsRemote = git(['ls-remote', '--tags', '--refs', repo, 'refs/tags/v*']);
 if (lsRemote === null) {
-  say(`git ls-remote failed (exit ${lastGitStatus}). Check network / repo URL.`);
+  say(
+    gitMissing
+      ? 'git was not found on PATH.'
+      : `git ls-remote failed (exit ${lastGitStatus}). Check network / repo URL.`
+  );
   process.exit(1);
 }
 
 const upstreamTags = [];
 for (const line of lsRemote.split(/\r?\n/)) {
-  const m = /^[0-9a-f]+\s+refs\/tags\/(v\d+\.\d+\.\d+)$/.exec(line);
+  const m = /^[0-9a-f]+\s+refs\/tags\/(v\d+\.\d+\.\d+)$/i.exec(line);
   if (m) upstreamTags.push(m[1]);
 }
 
@@ -184,7 +209,12 @@ for (const t of behind) console.log(`  ${t}`);
 console.log('');
 console.log('To upgrade:');
 if (mode === 'sync') {
-  console.log(`  pwsh -File ${mountPath}/install/sync.ps1 -Tag ${latest}`);
+  // The port removed the implicit guarantee that the reader has pwsh, so name the runnable one.
+  console.log(
+    process.platform === 'win32'
+      ? `  pwsh -File ${mountPath}/install/sync.ps1 -Tag ${latest}`
+      : `  bash ${mountPath}/install/sync.sh --tag ${latest}`
+  );
   console.log(`  git add ${mountPath}`);
   console.log(`  git commit -m "Sync copilot-toolkit -> ${latest}"`);
 } else {
