@@ -40,7 +40,7 @@ import path from 'node:path';
 const FLAGS = new Set(['--consumer-root', '--repo', '--mount-path', '--lock-file']);
 
 function usage(message) {
-  console.log(`[toolkit-check] ${message}`);
+  console.error(`[toolkit-check] ${message}`);
   process.exit(2);
 }
 
@@ -73,6 +73,7 @@ const say = (msg) => console.log(`[toolkit-check] ${msg}`);
 // as a fatal error. The two call sites that must be fatal check for null themselves.
 let lastGitStatus = 0;
 let gitMissing = false;
+let gitTimedOut = false;
 function git(args, opts = {}) {
   try {
     const out = execFileSync('git', args, {
@@ -88,6 +89,8 @@ function git(args, opts = {}) {
     return out;
   } catch (e) {
     if (e.code === 'ENOENT') gitMissing = true;
+    // execFileSync reports a timeout by killing the child, so there is a signal and no exit code.
+    gitTimedOut = e.code === 'ETIMEDOUT' || (e.signal != null && e.status == null);
     lastGitStatus = typeof e.status === 'number' ? e.status : 1;
     return null;
   }
@@ -162,11 +165,9 @@ if (!mode) {
 say(`Querying upstream tags (${repo}) ...`);
 const lsRemote = git(['ls-remote', '--tags', '--refs', repo, 'refs/tags/v*']);
 if (lsRemote === null) {
-  say(
-    gitMissing
-      ? 'git was not found on PATH.'
-      : `git ls-remote failed (exit ${lastGitStatus}). Check network / repo URL.`
-  );
+  if (gitMissing) say('git was not found on PATH.');
+  else if (gitTimedOut) say('git ls-remote timed out after 60s. The remote is unreachable or is waiting for credentials.');
+  else say(`git ls-remote failed (exit ${lastGitStatus}). Check network / repo URL.`);
   process.exit(1);
 }
 

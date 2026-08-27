@@ -16,7 +16,9 @@
 //     stdin and the timeout are what carry the guarantee there.
 //   - GIT_PAGER=cat / PAGER=cat: git/less/more never opens a pager.
 //   - GIT_TERMINAL_PROMPT=0: git refuses to prompt for credentials, fails fast.
-//   - Hard wall-clock timeout: the process tree is killed if it overruns the budget.
+//   - Hard wall-clock timeout: the process tree is killed if it overruns the budget. A child that
+//     exits on time after backgrounding work of its own is not waited for; the budget covers the
+//     child, not everything it may have detached.
 //   - stdout / stderr go to files, never to a TTY (some tools change behavior on TTY detect).
 //
 // Exit codes:
@@ -38,12 +40,13 @@ function usage(message) {
   process.exit(2);
 }
 
-// PowerShell's parameter binder rejected an unknown or valueless parameter; silently falling back
-// to a default would run the child under settings the caller did not ask for.
+// PowerShell's parameter binder rejected an unknown, valueless or repeated parameter; silently
+// falling back to a default would run the child under settings the caller did not ask for.
 function arg(flag, def) {
-  const i = process.argv.indexOf(flag);
-  if (i < 0) return def;
-  const value = process.argv[i + 1];
+  const hits = process.argv.reduce((acc, t, i) => (t === flag ? [...acc, i] : acc), []);
+  if (hits.length === 0) return def;
+  if (hits.length > 1) usage(`${flag} was given more than once.`);
+  const value = process.argv[hits[0] + 1];
   if (!value || value.startsWith('--')) usage(`${flag} requires a value.`);
   return value;
 }
@@ -185,6 +188,9 @@ function killTree() {
 let timedOut = false;
 let treeKilled = true;
 const timer = setTimeout(() => {
+  // The child can exit between its 'close' being queued and this timer firing; reporting TIMEOUT
+  // then would discard a completed run's output and its real exit code.
+  if (child.exitCode !== null || child.signalCode !== null) return;
   timedOut = true;
   treeKilled = killTree();
 }, timeoutSec * 1000);
@@ -230,22 +236,27 @@ child.on('close', (code, signal) => {
     return;
   }
 
-  if (captured) {
-    try { fs.closeSync(outFd); } catch { /* already closed */ }
-    try { fs.closeSync(errFd); } catch { /* already closed */ }
-    const outText = fs.readFileSync(outputFile, 'utf8');
-    process.stdout.write(outText);
-    const errText = fs.readFileSync(errFile, 'utf8');
-    if (errText.length > 0) {
-      // The PowerShell version wrote this block with Write-Host, i.e. to stdout and always on a
-      // fresh line. Keep both, so a caller redirecting stdout to a file still captures stderr and
-      // the heading never runs into the last line of stdout.
-      const sep = outText.length > 0 && !outText.endsWith('\n') ? '\n' : '';
-      process.stdout.write(`${sep}--- stderr ---\n${errText}`);
+  try {
+    if (captured) {
+      try { fs.closeSync(outFd); } catch { /* already closed */ }
+      try { fs.closeSync(errFd); } catch { /* already closed */ }
+      const outText = fs.readFileSync(outputFile, 'utf8');
+      process.stdout.write(outText);
+      const errText = fs.readFileSync(errFile, 'utf8');
+      if (errText.length > 0) {
+        // The PowerShell version wrote this block with Write-Host, i.e. to stdout and always on a
+        // fresh line. Keep both, so a caller redirecting stdout to a file still captures stderr and
+        // the heading never runs into the last line of stdout.
+        const sep = outText.length > 0 && !outText.endsWith('\n') ? '\n' : '';
+        process.stdout.write(`${sep}--- stderr ---\n${errText}`);
+      }
     }
+  } catch (e) {
+    // Losing the output must not also lose the child's status or leak the temp directory.
+    console.error(`run-safe: could not relay captured output: ${e.message}`);
+  } finally {
+    cleanup(outFd, errFd);
+    // A killed child reports a signal and no code; surface it as a generic failure.
+    process.exitCode = code === null ? (signal ? 1 : 0) : code;
   }
-  cleanup(outFd, errFd);
-
-  // A killed child reports a signal and no code; surface it as a generic failure.
-  process.exitCode = code === null ? (signal ? 1 : 0) : code;
 });

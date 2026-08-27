@@ -30,8 +30,8 @@
 // Options:
 //   --path <a,b,c>          files or directories to scan; directories are walked recursively.
 //                           Repeatable. Default '.'.
-//   --extension <.a,.b>     file extensions to include. Repeatable. Default: markdown, scripts,
-//                           config text.
+//   --extension <.a,.b>     file extensions to include; a leading dot is optional. Repeatable.
+//                           Default: markdown, scripts, config text.
 //   --exclude <glob>        glob matched against the full path (* and ? only, case-insensitive;
 //                           PowerShell's [abc] classes are not supported). Repeatable.
 //   --allow-value <value>   literal matched-string value to exempt (case-insensitive string
@@ -56,16 +56,20 @@ function usage(message) {
 }
 
 // A leak gate must fail closed on a usage error: a typo that silently fell back to the default
-// scope would report clean over the wrong tree.
+// scope would report clean over the wrong tree. That includes a flag that is present but yields
+// nothing, such as `--path ,`.
 function args(flag, def) {
   const out = [];
+  let present = false;
   for (let i = 0; i < process.argv.length; i++) {
     if (process.argv[i] !== flag) continue;
+    present = true;
     const value = process.argv[i + 1];
     if (!value || value.startsWith('--')) usage(`${flag} requires a value.`);
     out.push(...value.split(',').filter(Boolean));
   }
-  return out.length ? out : def;
+  if (present && out.length === 0) usage(`${flag} was given no usable values.`);
+  return present ? out : def;
 }
 
 for (let i = 2; i < process.argv.length; i++) {
@@ -78,9 +82,11 @@ for (let i = 2; i < process.argv.length; i++) {
 }
 
 const paths = args('--path', ['.']);
+// path.extname always returns a leading dot, so a bare `md` would match nothing and the gate would
+// scan zero files and exit 0.
 const extensions = args('--extension', [
   '.md', '.ps1', '.psm1', '.sh', '.mjs', '.cjs', '.js', '.ts', '.json', '.jsonc', '.yml', '.yaml', '.txt',
-]).map((e) => e.toLowerCase());
+]).map((e) => (e.startsWith('.') ? e : `.${e}`).toLowerCase());
 const excludes = args('--exclude', []);
 const allowValues = args('--allow-value', []);
 const includeSelf = process.argv.includes('--include-self');
@@ -128,8 +134,11 @@ function shouldExclude(fullPath) {
 function isRegularFile(p) {
   try {
     return fs.statSync(p).isFile();
-  } catch {
-    return false;
+  } catch (e) {
+    // A dangling symlink is the one skip the original also made. Anything else means the gate
+    // could not look at a file it was asked to scan, which must not pass silently.
+    if (e.code === 'ENOENT' || e.code === 'ELOOP') return false;
+    usage(`cannot stat "${p}": ${e.message}`);
   }
 }
 
@@ -198,6 +207,23 @@ function readText(file) {
   }
   if (buf.length >= 3 && b(0) === 0xef && b(1) === 0xbb && b(2) === 0xbf) {
     return buf.subarray(3).toString('utf8');
+  }
+  // A BOM-less UTF-16 file has nothing to detect, and the oracle missed it too. Sniff instead:
+  // interleaved NULs in a file whose extension says "text" mean wide characters, and decoding
+  // those as UTF-8 would leave a leak unmatched. This is the one place the port scans more than
+  // the script it replaces, because the alternative is a silent false negative.
+  const probe = buf.subarray(0, 512);
+  let nulsAtEven = 0;
+  let nulsAtOdd = 0;
+  for (let i = 0; i < probe.length; i++) {
+    if (probe[i] !== 0x00) continue;
+    if (i % 2 === 0) nulsAtEven++;
+    else nulsAtOdd++;
+  }
+  if (nulsAtEven + nulsAtOdd > probe.length / 4) {
+    const body = Buffer.from(buf.subarray(0, buf.length - (buf.length % 2)));
+    // ASCII in UTF-16LE puts the NUL in the high byte, i.e. at odd offsets; BE is the mirror.
+    return nulsAtOdd >= nulsAtEven ? body.toString('utf16le') : body.swap16().toString('utf16le');
   }
   return buf.toString('utf8');
 }

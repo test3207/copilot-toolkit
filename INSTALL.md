@@ -42,6 +42,8 @@ A new repo with no existing copilot toolkit config.
 * Consumer repo is a git repo with an unmodified `.vscode/settings.json`
   (or none).
 * `git` ≥ 2.20 and PowerShell 7 (`pwsh`) on PATH.
+* Node.js 18+ on PATH. The consumer-reachable helpers under `scripts/` are Node,
+  and `run-safe.mjs` additionally needs PowerShell 7 on Windows.
 
 **Steps** (run from the consumer repo root)
 

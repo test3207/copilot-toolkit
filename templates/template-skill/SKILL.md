@@ -63,7 +63,7 @@
 #     <skill-name>/                       <-- name MUST match the `name` frontmatter field
 #       SKILL.md                          <-- required, this file
 #       scripts/                          <-- optional, helper scripts referenced from SKILL.md
-#         do-thing.ps1
+#         do-thing.mjs
 #       examples/                         <-- optional, reference data the skill links to
 #         sample-input.json
 #       templates/                        <-- optional, files the skill generates from
@@ -134,7 +134,7 @@ the user interactively, say so here.
 
 ### Step 1 — Short name
 
-What to do. Concrete commands or tool calls. Reference helper scripts as `[script](./scripts/do-thing.ps1)` —
+What to do. Concrete commands or tool calls. Reference helper scripts as `[script](./scripts/do-thing.mjs)` --
 they are only loaded when the link is followed.
 
 ### Step 2 — Short name
@@ -158,5 +158,5 @@ the model emits it consistently.
 
 ## References
 
-- `./scripts/do-thing.ps1` — what the helper does.
+- `./scripts/do-thing.mjs` — what the helper does.
 - `./examples/sample-input.json` — reference shape for input.
