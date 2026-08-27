@@ -7,7 +7,7 @@ can be deleted if they don't apply.
 
 This file is loaded into every chat as system instructions, so keep it terse.
 
-Drift gate: the toolkit ships `scripts/lint-public.ps1` (scans for host markers -
+Drift gate: the toolkit ships `scripts/lint-public.mjs` (scans for host markers -
 internal org names, GUIDs, internal PR refs) and `scripts/lint-recipes.mjs` (flags
 multi-step inline `pwsh`/`bash` blocks in recipe files - the "recipe glue =
 Node script" rule). Keep your consumer copy as-is - lint is intended for upstream-side
@@ -49,10 +49,13 @@ or auth prompt = silent hang.
 - Always `git --no-pager <cmd>`. Never bare `git log` / `git diff` / `git show`.
 - Nested pwsh: pass `-NonInteractive -NoProfile` (Read-Host then throws instead of
   pending).
-- Wrap unknown-duration / external commands in `.copilot-toolkit/scripts/run-safe.ps1` (hard
+- Wrap unknown-duration / external commands in `.copilot-toolkit/scripts/run-safe.mjs` (hard
   timeout + closed stdin + pager defang).
-  - Usage: `pwsh -File .copilot-toolkit/scripts/run-safe.ps1 -Command "<cmd>" -TimeoutSec <n>`
+  - Usage: `node .copilot-toolkit/scripts/run-safe.mjs --command "<cmd>" --timeout-sec <n>`
   - Returns `124` on timeout (process killed).
+  - The child shell is PowerShell 7 on Windows and `/bin/sh` on POSIX, so a command written
+    in PowerShell syntax is not portable through this wrapper. On Windows it exits `2` if
+    PowerShell 7 is not installed rather than falling back to Windows PowerShell 5.1.
 - **No inline temp scripts -- write a `.mjs`, then run it.** Applies to BOTH committed
   recipe glue AND runtime ad-hoc / throwaway probes. If logic needs more than a single
   command (loops, JSON parsing, multi-step git, conditionals), write a Node ES-module to

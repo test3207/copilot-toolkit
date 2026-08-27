@@ -42,6 +42,8 @@ A new repo with no existing copilot toolkit config.
 * Consumer repo is a git repo with an unmodified `.vscode/settings.json`
   (or none).
 * `git` ≥ 2.20 and PowerShell 7 (`pwsh`) on PATH.
+* Node.js 18+ on PATH. The consumer-reachable helpers under `scripts/` are Node,
+  and `run-safe.mjs` additionally needs PowerShell 7 on Windows.
 
 **Steps** (run from the consumer repo root)
 
@@ -262,7 +264,16 @@ git commit -m "Sync copilot-toolkit -> <tag>"
 1. Reload VS Code.
 2. Trigger a representative skill end-to-end (the consumer's repo-specific
    smoke test list, if any).
-3. If a skill misbehaves: check the upstream changelog between the previous
+3. **Check your own instructions file for helper paths that moved.** The toolkit
+   does not write to your `.github/copilot-instructions.md`, so anything you
+   copied from `templates/copilot-instructions.template.md` -- or any prose or
+   recipe of your own that invokes a `scripts/` helper -- keeps naming whatever
+   path was current when you wrote it. Grep your repo for `.copilot-toolkit/scripts/`
+   and confirm each hit still exists at the tag you just moved to, and that its
+   options and exit codes still mean what your recipe assumes; a stale
+   invocation fails at run time, and a stale one inside a gate recipe can fail
+   *open*.
+4. If a skill misbehaves: check the upstream changelog between the previous
    tag and the new tag, then either roll back (Scenario 6) or file an issue
    upstream.
 
