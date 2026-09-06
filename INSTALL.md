@@ -6,7 +6,7 @@ consumer's working tree. Two mount modes are supported:
 | Mode | Update mechanism | When to pick |
 | --- | --- | --- |
 | **Submodule** | `git submodule update --remote` (or `git submodule add -b <tag>` for a fresh pin) | Default. Mount path is a git submodule; VS Code sees upstream changes immediately after `git submodule update`. |
-| **Sync** | `pwsh install/sync.ps1 -Tag vX.Y.Z` (or `bash install/sync.sh --tag vX.Y.Z`) | Consumer can't use submodules (policy, monorepo, etc.) or wants explicit per-tag opt-in with no transitive git surface. |
+| **Sync** | `node .copilot-toolkit/install/sync.mjs --tag vX.Y.Z` | Consumer can't use submodules (policy, monorepo, etc.) or wants explicit per-tag opt-in with no transitive git surface. |
 
 Both modes share:
 
@@ -93,23 +93,33 @@ git commit -m "Add copilot-toolkit submodule (<tag>)"
 ## Scenario 2: Fresh consumer + sync
 
 Same shape as Scenario 1, but no submodule -- consumer commits the synced
-files directly. Updates require re-running the sync script.
+files directly. Updates require re-running the sync script. Sync still delivers
+the selected Git tag's source tree, not a built Release bundle.
 
 **Prereqs**
 
-* `git`, `pwsh` (or `bash` + `sha256sum`) on PATH.
+* Git and Node.js 18+ on PATH. The standalone installer uses only Node built-ins;
+  it needs no npm install, companion files, PowerShell, Bash, or hash utility.
 * Consumer accepts that `.copilot-toolkit/` content is checked in to the
   consumer repo (increases repo size, but avoids submodule UX).
 
 **Steps** (run from the consumer repo root)
 
+Download a single [`install/sync.mjs`](install/sync.mjs) from a modern tag
+containing that file. Set `<bootstrap-tag>` to that tag, independently of the
+`<tag>` you want to install. Older target tags do not contain the Node entry
+point, but the modern bootstrap can still install them. Download through your
+browser or use either acquisition recipe below; the installer itself runs in
+any shell and resolves its destination from the current directory.
+
 ```pwsh
-# 1. Download the sync script for the target tag.
+# 1. Download a modern standalone bootstrap; the target tag can be older.
+$bootstrapTag = '<bootstrap-tag>'
 $tag = '<tag>'
-Invoke-WebRequest "https://raw.githubusercontent.com/test3207/copilot-toolkit/$tag/install/sync.ps1" -OutFile sync-bootstrap.ps1
+Invoke-WebRequest "https://raw.githubusercontent.com/test3207/copilot-toolkit/$bootstrapTag/install/sync.mjs" -OutFile sync-bootstrap.mjs
 
 # 2. Run it. Populates .copilot-toolkit/ and writes .copilot-toolkit/.sync-lock.
-pwsh -File sync-bootstrap.ps1 -Tag $tag
+node sync-bootstrap.mjs --tag $tag
 
 # 3. Wire .vscode/settings.json (same as Scenario 1 step 2).
 New-Item -ItemType Directory -Force -Path .vscode | Out-Null
@@ -123,19 +133,48 @@ Copy-Item .copilot-toolkit/templates/copilot-instructions.template.md .github/co
 # block; delete OPTIONAL sections that don't apply.
 
 # 5. Commit everything.
-Remove-Item sync-bootstrap.ps1
+Remove-Item sync-bootstrap.mjs
 git add .copilot-toolkit .vscode/settings.json .github/copilot-instructions.md
 git commit -m "Add copilot-toolkit (sync mode, <tag>)"
 ```
 
-Bash equivalent for step 2 (Linux / macOS):
+Bash acquisition and execution equivalent (Linux / macOS):
 
 ```bash
+bootstrap_tag='<bootstrap-tag>'
 tag='<tag>'
-curl -fsSL "https://raw.githubusercontent.com/test3207/copilot-toolkit/$tag/install/sync.sh" -o sync-bootstrap.sh
-bash sync-bootstrap.sh --tag "$tag"
-rm sync-bootstrap.sh
+curl -fsSL "https://raw.githubusercontent.com/test3207/copilot-toolkit/$bootstrap_tag/install/sync.mjs" -o sync-bootstrap.mjs
+node sync-bootstrap.mjs --tag "$tag"
+rm sync-bootstrap.mjs
 ```
+
+Settings, project instructions, and registry setup remain manual. The separate
+init handoff is pending (#45); there is no init command to invoke here.
+
+### Sync safety and compatibility
+
+* `--repo <url-or-path>` selects another Git upstream. `--tag vX.Y.Z` is explicit
+  and must name a tag, not a same-named branch. Exit codes: `0` success,
+  `1` operational failure, `2` invalid invocation. Use `--help` for syntax.
+* The existing `.sync-lock` metadata and SHA-256 manifest format is retained,
+  including support for LF, CRLF and BOM locks. New manifests include `.github`,
+  dotfiles and Windows-hidden ordinary files, but not root `.git` or the lock
+  itself. A legacy root-lock self-entry is ignored.
+* Tracked edits refuse sync unless `--force` is supplied. Explicit uninstall
+  removes edited tracked files without `--force`. Missing tracked files warn
+  and are restored by sync. Untracked additions can be removed
+  by replacement. Older installers omitted some hidden files from their locks;
+  those unlisted files cannot be protected from edits on the first migration.
+* Git checkouts, registered submodules, linked mounts, nonempty unmanaged
+  directories and malformed locks are refused even with `--force`. Unsupported
+  links or special files in either tree also fail before activation. Consumer
+  configuration and Git state are never changed by the installer.
+* Checkout, manifest and lock finish in a same-volume staging directory before
+  activation. The old tree stays in a backup until activation succeeds and is
+  restored if activation fails. Cleanup or restoration failures return `1` and
+  report retained paths; the output states when a new installation is already
+  active. Inspect those paths before manual recovery or cleanup. This is not
+  crash-proof atomicity and does not support concurrent sync operations.
 
 **Verify**: same as Scenario 1.
 
@@ -197,10 +236,11 @@ As Scenario 3, but mount via sync instead of submodule.
 **Steps**
 
 ```pwsh
+$bootstrapTag = '<bootstrap-tag>'
 $tag = '<tag>'
-Invoke-WebRequest "https://raw.githubusercontent.com/test3207/copilot-toolkit/$tag/install/sync.ps1" -OutFile sync-bootstrap.ps1
-pwsh -File sync-bootstrap.ps1 -Tag $tag
-Remove-Item sync-bootstrap.ps1
+Invoke-WebRequest "https://raw.githubusercontent.com/test3207/copilot-toolkit/$bootstrapTag/install/sync.mjs" -OutFile sync-bootstrap.mjs
+node sync-bootstrap.mjs --tag $tag
+Remove-Item sync-bootstrap.mjs
 
 # Hand-merge .vscode/settings.json as in Scenario 3 step 2.
 
@@ -248,16 +288,19 @@ git commit --amend --no-edit
 ### Sync mode
 
 ```pwsh
-# Use the previously installed script (or re-download the bootstrap script
-# for the new tag if you want the latest sync.ps1 behavior).
-pwsh -File .copilot-toolkit/install/sync.ps1 -Tag <tag>
+# Use the installed Node entry point when the current tag contains it.
+node .copilot-toolkit/install/sync.mjs --tag <tag>
 
 # The script will REFUSE if it detects local edits inside .copilot-toolkit/.
-# To override (and discard those edits), add -Force.
+# To override (and discard those edits), add --force.
 
 git add .copilot-toolkit
 git commit -m "Sync copilot-toolkit -> <tag>"
 ```
+
+If the current tag predates the Node entry point, re-download a modern bootstrap
+as in Scenario 2 and run `node sync-bootstrap.mjs --tag <tag>` instead. Use the
+same approach to select newer installer behavior independently of the target tag.
 
 **Verify (both modes)**
 
@@ -295,19 +338,27 @@ git commit -m "Remove copilot-toolkit submodule"
 ### Sync mode
 
 ```pwsh
-pwsh -File .copilot-toolkit/install/sync.ps1 -Uninstall
-# Or manually:
-#   Remove-Item -Recurse -Force .copilot-toolkit
+node .copilot-toolkit/install/sync.mjs --uninstall
 # Remove the three toolkit keys from .vscode/settings.json by hand.
 git add .copilot-toolkit .vscode/settings.json
 git commit -m "Remove copilot-toolkit (sync)"
 ```
 
+For an older tag, use the standalone bootstrap from Scenario 2:
+`node sync-bootstrap.mjs --uninstall`. It also allows repeated uninstall after
+the mount is absent. Explicit uninstall removes local edits without `--force`;
+ownership, lock-path and link checks still apply, even with `--force`.
+
 ### Rolling back to a previous tag
 
 * Submodule: `git -C .copilot-toolkit checkout vX.Y.Z-previous`, then
   `git add .copilot-toolkit && git commit -m "Roll back to vX.Y.Z-previous"`.
-* Sync: `pwsh -File .copilot-toolkit/install/sync.ps1 -Tag vX.Y.Z-previous -Force`.
+* Sync: keep a modern bootstrap **outside** `.copilot-toolkit/` before rollback.
+  Download it as in Scenario 2, or copy the installed Node entry point to
+  `sync-bootstrap.mjs` if it exists. Run
+  `node sync-bootstrap.mjs --tag <previous-tag>` (a real `vX.Y.Z` tag); add
+  `--force` only to discard tracked edits. An older target can remove the newer
+  installed entry point, so retain this bootstrap for later sync or uninstall.
 
 ---
 
@@ -317,7 +368,7 @@ git commit -m "Remove copilot-toolkit (sync)"
 | --- | --- | --- |
 | `/` menu doesn't show toolkit skills after install | Settings paths wrong or window not reloaded | Run `Developer: Reload Window`; verify the three settings keys point at `.copilot-toolkit/.github/skills` / `.copilot-toolkit/.github/agents` / `.copilot-toolkit/.github/prompts` (not bare `.copilot-toolkit/skills`). |
 | `git submodule update --remote` does nothing | `.gitmodules` has no `branch` entry pinned | `git config -f .gitmodules submodule..copilot-toolkit.branch vX.Y.Z` (then commit). |
-| `sync.ps1 -Tag vX.Y.Z` refuses with "local edit detected" | One or more files inside `.copilot-toolkit/` differ from the previously-synced manifest (`.copilot-toolkit/.sync-lock`) | Either restore the file to its upstream content, or add `-Force` to overwrite and discard the local edit. Never edit files inside `.copilot-toolkit/` -- propose the change upstream instead. |
+| `node sync.mjs --tag vX.Y.Z` refuses with "Local edits detected" | One or more files inside `.copilot-toolkit/` differ from the previously-synced manifest (`.copilot-toolkit/.sync-lock`) | Either restore the file to its upstream content, or add `--force` to overwrite and discard the local edit. Never edit files inside `.copilot-toolkit/` -- propose the change upstream instead. |
 | Subagent fails with "skill file not found" referencing `.github/skills/<tool>/...` | Subagent didn't receive the `toolkit-root` input from the calling prompt | Verify the consumer's prompt computes `$toolkitRoot = if (Test-Path '.copilot-toolkit/.github') { '.copilot-toolkit/.github' } else { '.github' }` at Step 0 and passes `toolkit-root: $toolkitRoot` to the subagent. |
 | Shipped slash command (`/pr-review`, `/work`, etc.) starts but no MCP tools fire | The prompt's `tools:` allowlist references server names (e.g. `ado-1`) that don't exist in the consumer's `.vscode/mcp.json` | Either rename the consumer's mcp.json entries to match the placeholder names (see "MCP server naming convention" below), or copy the prompt to the consumer's own `.github/prompts/` and adjust the `tools:` list. |
 

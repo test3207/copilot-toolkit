@@ -215,12 +215,8 @@ if (currentTag === latest) {
   console.log('');
   console.log('To upgrade:');
   if (mode === 'sync') {
-    // The port removed the implicit guarantee that the reader has pwsh, so name the runnable one.
-    console.log(
-      process.platform === 'win32'
-        ? `  pwsh -File ${mountPath}/install/sync.ps1 -Tag ${latest}`
-        : `  bash ${mountPath}/install/sync.sh --tag ${latest}`
-    );
+    console.log(`  node "${mountPath}/install/sync.mjs" --tag ${latest}`);
+    console.log('  If the installed tag predates sync.mjs, download a modern standalone bootstrap (INSTALL.md, Scenario 2).');
     console.log(`  git add ${mountPath}`);
     console.log(`  git commit -m "Sync copilot-toolkit -> ${latest}"`);
   } else {

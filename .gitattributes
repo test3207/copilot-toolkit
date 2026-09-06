@@ -1,5 +1,5 @@
 # Shell scripts must keep LF line endings even when checked out on Windows --
-# CRLF would make `bash install/sync.sh` fail with "bad interpreter" on
+# CRLF can make shell scripts fail with "bad interpreter" on
 # Linux / macOS. PowerShell, markdown, and other text default to git's auto
 # line-ending behavior.
 *.sh text eol=lf
