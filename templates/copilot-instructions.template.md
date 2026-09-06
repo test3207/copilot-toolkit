@@ -88,12 +88,12 @@ This consumer pulls reusable skills, agents, and scripts from the upstream
   "chat.promptFilesLocations": { ".copilot-toolkit/.github/prompts": true }
   ```
 
-- **Sync script**: `pwsh -File .copilot-toolkit/install/sync.ps1 -Tag <tag>` (or
-  `bash .copilot-toolkit/install/sync.sh --tag <tag>`) clones the upstream tag and
-  replaces the whole `.copilot-toolkit/` tree, then records a SHA256 manifest in
-  `.copilot-toolkit/.sync-lock`. On re-sync it re-hashes every tracked file and
-  refuses to overwrite when it finds a local edit; `-Force` (`--force` for the
-  bash script) discards those edits.
+- **Sync script**: `node .copilot-toolkit/install/sync.mjs --tag <tag>` stages the
+  upstream tag and its SHA256 manifest before replacing `.copilot-toolkit/`.
+  The manifest lives in `.copilot-toolkit/.sync-lock`. On re-sync it re-hashes
+  every tracked file and refuses local edits; `--force` discards those edits,
+  but never bypasses ownership checks. For older-tag bootstraps and lifecycle
+  details, see `.copilot-toolkit/INSTALL.md`.
 
 Whichever mode, **never edit toolkit-shipped files directly in this consumer**.
 File a PR upstream and re-pull. Consumer-only skills, agents, and prompts live

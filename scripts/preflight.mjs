@@ -35,7 +35,7 @@ function run(cmd) {
 }
 
 const HINTS = {
-  node: { install: 'Install Node.js 18+: https://nodejs.org/ (winget: winget install OpenJS.NodeJS.LTS)' },
+  node: { install: 'Install Node.js 24+, using a supported LTS release (recommended: Node 24 LTS): https://nodejs.org/ (winget: winget install OpenJS.NodeJS.LTS)' },
   git: { install: 'Install Git: https://git-scm.com/downloads (winget: winget install Git.Git)' },
   az: {
     install: 'Install Azure CLI: https://aka.ms/installazurecliwindows (winget: winget install Microsoft.AzureCLI)',
@@ -54,10 +54,10 @@ const remediation = [];  // actionable items for missing / unauthenticated capab
 // node -- we are running under it
 {
   const major = parseInt(process.versions.node.split('.')[0], 10);
-  deps.node = { present: true, version: process.version, ok: major >= 18 };
+  deps.node = { present: true, version: process.version, ok: major >= 24 };
   if (!deps.node.ok) {
     blocking.push('node');
-    remediation.push({ dep: 'node', why: `Node ${process.version} is too old (need >= 18).`, fix: HINTS.node.install });
+    remediation.push({ dep: 'node', why: `Node ${process.version} is too old (need >= 24).`, fix: HINTS.node.install });
   }
 }
 

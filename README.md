@@ -15,7 +15,7 @@ License: MIT.
 | `.github/prompts/<name>.prompt.md` | Thin-shim slash-command entry points (`/dep`, `/pr-review`, `/work`, `/tool-dev`, `/onboard-repo`). Each shim owns the MCP `tools:` allowlist and delegates the workflow body to the matching skill. Consumers discover these via `chat.promptFilesLocations` (see `INSTALL.md`). |
 | `scripts/` | Helper scripts, all Node. The two gates are `lint-public.mjs` and `lint-recipes.mjs`; see Contributing. |
 | `templates/` | Starter files for new consumers (`_template.prompt.md`, `template-skill/`, `copilot-instructions.template.md`). |
-| `install/` | Install helpers (`sync.ps1`, `sync.sh`, `settings-snippet.jsonc`) for sync mode + the `.vscode/settings.json` snippet shared by both mount modes. See `INSTALL.md`. |
+| `install/` | Standalone Node sync installer (`sync.mjs`), offline tests (`sync.test.mjs`), and the `.vscode/settings.json` snippet (`settings-snippet.jsonc`) shared by both mount modes. See `INSTALL.md`. |
 
 ## Self-bootstrap (dev loop for skill / agent authors)
 
@@ -74,9 +74,9 @@ tree (settings paths and skill-resolution rules are identical for both modes):
 * **Submodule** -- mount as a git submodule, pin to a tag, update via
   `git submodule update --remote`.
 * **Sync** -- copy the upstream tree in via
-  [`install/sync.ps1`](install/sync.ps1) /
-  [`install/sync.sh`](install/sync.sh), pinned via
+  [`install/sync.mjs`](install/sync.mjs) (Node 24+ and Git 2.29+), pinned via
   `.copilot-toolkit/.sync-lock` (SHA256 manifest catches drift on re-sync).
+  Use a supported Node LTS release; Node 24 LTS is recommended.
 
 See [`INSTALL.md`](INSTALL.md) for the six supported scenarios (fresh
 consumer, existing consumer, submodule vs sync, upgrade, uninstall) with
