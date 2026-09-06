@@ -42,8 +42,9 @@ A new repo with no existing copilot toolkit config.
 * Consumer repo is a git repo with an unmodified `.vscode/settings.json`
   (or none).
 * `git` ≥ 2.20 and PowerShell 7 (`pwsh`) on PATH.
-* Node.js 18+ on PATH. The consumer-reachable helpers under `scripts/` are Node,
-  and `run-safe.mjs` additionally needs PowerShell 7 on Windows.
+* Node.js 24+ on PATH. Use a supported LTS release; Node 24 LTS is recommended.
+  The consumer-reachable helpers under `scripts/` are Node, and `run-safe.mjs`
+  additionally needs PowerShell 7 on Windows.
 
 **Steps** (run from the consumer repo root)
 
@@ -98,7 +99,10 @@ the selected Git tag's source tree, not a built Release bundle.
 
 **Prereqs**
 
-* Git and Node.js 18+ on PATH. The standalone installer uses only Node built-ins;
+* Git 2.29+ and Node.js 24+ on PATH. Use a supported LTS release; Node 24 LTS
+  is recommended. Sync now uses Git's explicit object-format
+  initialization to match the source's SHA-1 or SHA-256 format, independent of
+  inherited defaults. The standalone installer uses only Node built-ins;
   it needs no npm install, companion files, PowerShell, Bash, or hash utility.
 * Consumer accepts that `.copilot-toolkit/` content is checked in to the
   consumer repo (increases repo size, but avoids submodule UX).
@@ -160,6 +164,13 @@ init handoff is pending (#45); there is no init command to invoke here.
   including support for LF, CRLF and BOM locks. New manifests include `.github`,
   dotfiles and Windows-hidden ordinary files, but not root `.git` or the lock
   itself. A legacy root-lock self-entry is ignored.
+* Initial files preserve raw Git blob bytes and POSIX executable modes. Source
+  or global attributes and checkout filters do not transform the payload; the
+  root lock is generated separately. Later consumer Git checkouts may convert
+  text line endings. Sync accepts a pure LF/CRLF difference only when the
+  alternate bytes match the original lock hash and consumer Git rules establish
+  text conversion. Git-clean status alone is not proof; binary, `-text`, filter
+  and encoding transformations remain protected, without executing filters.
 * Tracked edits refuse sync unless `--force` is supplied. Explicit uninstall
   removes edited tracked files without `--force`. Missing tracked files warn
   and are restored by sync. Untracked additions can be removed
@@ -169,7 +180,12 @@ init handoff is pending (#45); there is no init command to invoke here.
   directories and malformed locks are refused even with `--force`. Unsupported
   links or special files in either tree also fail before activation. Consumer
   configuration and Git state are never changed by the installer.
-* Checkout, manifest and lock finish in a same-volume staging directory before
+* Filesystem-equivalent file and directory prefixes are checked before payload
+  writes, with the same policy for manifest paths and submodule ownership.
+  Windows checks case equivalence. macOS conservatively treats case and Unicode
+  normalization variants as equivalent, which can refuse otherwise valid paths
+  on case-sensitive volumes. Linux names remain case-sensitive.
+* Raw materialization, manifest and lock finish in a same-volume staging directory before
   activation. The old tree stays in a backup until activation succeeds and is
   restored if activation fails. Cleanup or restoration failures return `1` and
   report retained paths; the output states when a new installation is already
@@ -368,7 +384,7 @@ ownership, lock-path and link checks still apply, even with `--force`.
 | --- | --- | --- |
 | `/` menu doesn't show toolkit skills after install | Settings paths wrong or window not reloaded | Run `Developer: Reload Window`; verify the three settings keys point at `.copilot-toolkit/.github/skills` / `.copilot-toolkit/.github/agents` / `.copilot-toolkit/.github/prompts` (not bare `.copilot-toolkit/skills`). |
 | `git submodule update --remote` does nothing | `.gitmodules` has no `branch` entry pinned | `git config -f .gitmodules submodule..copilot-toolkit.branch vX.Y.Z` (then commit). |
-| `node sync.mjs --tag vX.Y.Z` refuses with "Local edits detected" | One or more files inside `.copilot-toolkit/` differ from the previously-synced manifest (`.copilot-toolkit/.sync-lock`) | Either restore the file to its upstream content, or add `--force` to overwrite and discard the local edit. Never edit files inside `.copilot-toolkit/` -- propose the change upstream instead. |
+| `node .copilot-toolkit/install/sync.mjs --tag vX.Y.Z` refuses with "Local edits detected" | One or more files inside `.copilot-toolkit/` differ from the previously-synced manifest (`.copilot-toolkit/.sync-lock`) beyond permitted text newline equivalence | Either restore the file to its upstream content, or add `--force` to overwrite and discard the local edit. Never edit files inside `.copilot-toolkit/` -- propose the change upstream instead. |
 | Subagent fails with "skill file not found" referencing `.github/skills/<tool>/...` | Subagent didn't receive the `toolkit-root` input from the calling prompt | Verify the consumer's prompt computes `$toolkitRoot = if (Test-Path '.copilot-toolkit/.github') { '.copilot-toolkit/.github' } else { '.github' }` at Step 0 and passes `toolkit-root: $toolkitRoot` to the subagent. |
 | Shipped slash command (`/pr-review`, `/work`, etc.) starts but no MCP tools fire | The prompt's `tools:` allowlist references server names (e.g. `ado-1`) that don't exist in the consumer's `.vscode/mcp.json` | Either rename the consumer's mcp.json entries to match the placeholder names (see "MCP server naming convention" below), or copy the prompt to the consumer's own `.github/prompts/` and adjust the `tools:` list. |
 

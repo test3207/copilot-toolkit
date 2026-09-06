@@ -74,8 +74,9 @@ tree (settings paths and skill-resolution rules are identical for both modes):
 * **Submodule** -- mount as a git submodule, pin to a tag, update via
   `git submodule update --remote`.
 * **Sync** -- copy the upstream tree in via
-  [`install/sync.mjs`](install/sync.mjs) (Node 18+ and Git), pinned via
+  [`install/sync.mjs`](install/sync.mjs) (Node 24+ and Git 2.29+), pinned via
   `.copilot-toolkit/.sync-lock` (SHA256 manifest catches drift on re-sync).
+  Use a supported Node LTS release; Node 24 LTS is recommended.
 
 See [`INSTALL.md`](INSTALL.md) for the six supported scenarios (fresh
 consumer, existing consumer, submodule vs sync, upgrade, uninstall) with

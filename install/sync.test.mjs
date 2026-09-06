@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
+import vm from 'node:vm';
 import { after, before, test } from 'node:test';
 
 let temporary;
@@ -94,17 +95,37 @@ function lockEntries(mount) {
   return entries.map(entry => [entry.slice(66), entry.slice(0, 64)]);
 }
 
-function gitPayload(tag) {
-  const tree = git(['ls-tree', '-r', '-z', `refs/tags/${tag}`], upstream, { encoding: null });
+function gitPayload(tag, repository = upstream) {
+  const tree = git(['ls-tree', '-r', '-z', `refs/tags/${tag}`], repository, { encoding: null });
   const expected = new Map();
   for (const record of tree.toString('utf8').split('\0').filter(Boolean)) {
     const match = /^(100644|100755) blob ([0-9a-f]+)\t(.+)$/.exec(record);
     assert.ok(match, record);
     const [, mode, object, relative] = match;
     if (relative === '.sync-lock') continue;
-    expected.set(relative, { mode, bytes: git(['cat-file', 'blob', object], upstream, { encoding: null }) });
+    expected.set(relative, { mode, bytes: git(['cat-file', 'blob', object], repository, { encoding: null }) });
   }
   return expected;
+}
+
+function indexedSource(context, files, format = 'sha1') {
+  const repository = fs.mkdtempSync(path.join(temporary, 'indexed-source-'));
+  context.after(() => fs.rmSync(repository, { recursive: true, force: true }));
+  const initialized = execute(process.platform === 'win32' ? 'git.exe' : 'git', [
+    '--no-pager', '-c', 'init.templateDir=', 'init', '--quiet', `--object-format=${format}`, repository,
+  ], temporary);
+  if (format === 'sha256' && initialized.status !== 0 && /unknown (option|hash)|unsupported/i.test(initialized.stderr)) {
+    context.skip(`Local Git lacks SHA-256 support: ${initialized.stderr.trim()}`);
+    return null;
+  }
+  passes(initialized);
+  for (const [relative, bytes] of files) {
+    const object = git(['hash-object', '-w', '--stdin'], repository, { input: bytes, stdio: ['pipe', 'pipe', 'pipe'] });
+    git(['update-index', '--add', '--cacheinfo', `100644,${object},${relative}`], repository);
+  }
+  git(['commit', '--quiet', '-m', 'Fixture raw indexed payload'], repository);
+  git(['tag', '-a', 'v1.0.0', '-m', 'Fixture annotated tag'], repository);
+  return repository;
 }
 
 function assertGitPayload(mount, expected) {
@@ -173,6 +194,9 @@ const path = require('node:path');
 const fault = process.env.SYNC_TEST_FAULT;
 const originalSpawn = childProcess.spawnSync;
 childProcess.spawnSync = function(command, args, options) {
+  if (fault === 'no-materialization' && args.includes('cat-file')) {
+    throw new Error('Unexpected payload materialization before path validation');
+  }
   if (fault === 'git-settings') {
     for (const [key, value] of Object.entries(JSON.parse(process.env.SYNC_TEST_GIT_ENV))) {
       assert.equal(options.env[key] ?? null, value, key);
@@ -256,6 +280,45 @@ after(() => {
   if (temporary) fs.rmSync(temporary, { recursive: true, force: true });
 });
 
+for (const [version, accepted] of [['18.20.8', false], ['22.0.0', false], ['24.0.0', true]]) {
+  test(`simulated Node ${version} enforces the installer baseline before mutation`, context => {
+    const { root, mount } = consumer(context);
+    const preload = path.join(temporary, `simulated-node-${version}.cjs`);
+    fs.writeFileSync(preload, `
+Object.defineProperty(process.versions, 'node', { value: '${version}' });
+Object.defineProperty(process, 'version', { value: 'v${version}' });
+if (!${accepted}) {
+  const fs = require('node:fs');
+  for (const method of ['mkdirSync', 'mkdtempSync', 'rmSync', 'renameSync', 'writeFileSync', 'chmodSync']) {
+    fs[method] = () => { throw new Error('Unexpected filesystem mutation: ' + method); };
+  }
+}
+`);
+    const simulated = args => execute(process.execPath, ['--require', preload, bootstrap, ...args], root);
+    const original = snapshot(root);
+    const originalEntries = fs.readdirSync(root);
+    const installResult = simulated(['--tag', 'v1.0.0', '--repo', upstream]);
+    if (accepted) {
+      passes(installResult);
+      assertGitPayload(mount, gitPayload('v1.0.0'));
+      passes(simulated(['--uninstall']));
+      assert.deepEqual(snapshot(root), original);
+    } else {
+      fails(installResult, /Node\.js 24\+.*v(?:18|22)\./);
+      assert.match(installResult.stderr, /24 LTS.*https:\/\/nodejs\.org/);
+      assert.deepEqual(snapshot(root), original);
+      assert.deepEqual(fs.readdirSync(root), originalEntries);
+      passes(sync(root));
+      const installed = snapshot(root);
+      fails(simulated(['--uninstall']), /Node\.js 24\+.*v(?:18|22)\./);
+      assert.deepEqual(snapshot(root), installed);
+    }
+    const helpResult = simulated(['--help']);
+    passes(helpResult);
+    assert.match(helpResult.stdout, /Node 24\+ and Git 2\.29\+/);
+  });
+}
+
 test('Git-selected tag payload and lock match independent tree/blob objects throughout standalone lifecycle', context => {
   const { root, mount } = consumer(context);
   git(['init', '--quiet', '.'], root);
@@ -275,6 +338,256 @@ test('Git-selected tag payload and lock match independent tree/blob objects thro
   passes(invoke(root, ['--uninstall']));
   assert.deepEqual(snapshot(root), original);
   assert.deepEqual(fs.readdirSync(path.dirname(bootstrap)), ['sync.mjs']);
+});
+
+for (const autocrlf of ['true', 'false']) {
+  test(`consumer autocrlf=${autocrlf} install-commit-checkout-resync preserves newline equivalence`, context => {
+    const { root, mount } = consumer(context);
+    git(['init', '--quiet', '.'], root);
+    git(['config', 'core.autocrlf', autocrlf], root);
+    passes(sync(root));
+    assertGitPayload(mount, gitPayload('v1.0.0'));
+    git(['-c', `core.autocrlf=${autocrlf}`, 'add', '--all'], root);
+    git(['commit', '--quiet', '-m', 'Fixture installed overlay'], root);
+    fs.rmSync(mount, { recursive: true });
+    git(['-c', `core.autocrlf=${autocrlf}`, 'checkout', '--', '.copilot-toolkit'], root);
+    assert.equal(fs.readFileSync(path.join(mount, 'README.md'), 'utf8'),
+      autocrlf === 'true' ? 'first release\r\n' : 'first release\n');
+    assert.equal(git(['-c', `core.autocrlf=${autocrlf}`, 'status', '--porcelain'], root), '');
+    passes(sync(root));
+    assertGitPayload(mount, gitPayload('v1.0.0'));
+  });
+  test(`consumer autocrlf=${autocrlf} refuses real text and binary edits even when committed and Git-clean`, context => {
+    for (const committed of [false, true]) {
+      for (const [relative, bytes] of [['README.md', 'real edit\r\n'],
+        ['space \u6587\u4ef6.txt', Buffer.from([0, 13, 10, 13, 128, 254])]]) {
+        const { root, mount } = consumer(context);
+        git(['init', '--quiet', '.'], root);
+        git(['config', 'core.autocrlf', autocrlf], root);
+        passes(sync(root));
+        git(['-c', `core.autocrlf=${autocrlf}`, 'add', '--all'], root);
+        git(['commit', '--quiet', '-m', 'Fixture overlay'], root);
+        write(mount, relative, bytes);
+        if (committed) {
+          git(['-c', `core.autocrlf=${autocrlf}`, 'add', '--all'], root);
+          git(['commit', '--quiet', '-m', 'Fixture genuine local edit'], root);
+          assert.equal(git(['-c', `core.autocrlf=${autocrlf}`, 'status', '--porcelain'], root), '');
+        }
+        const original = snapshot(root);
+        fails(sync(root), /Local edits detected/);
+        assert.deepEqual(snapshot(root), original);
+      }
+    }
+  });
+}
+
+test('newline equivalence rejects non-text, binary, filtered and encoded transformations', context => {
+  for (const rule of ['none', '-text', 'binary', 'text filter=visible', 'text working-tree-encoding=UTF-8', 'encoded']) {
+    const { root, mount } = consumer(context);
+    git(['init', '--quiet', '.'], root);
+    git(['config', 'core.autocrlf', rule === 'none' ? 'false' : 'true'], root);
+    if (rule !== 'none' && rule !== 'encoded') write(root, '.gitattributes', `.copilot-toolkit/README.md ${rule}\n`);
+    passes(sync(root));
+    git(['add', '--all'], root);
+    git(['commit', '--quiet', '-m', 'Fixture newline negative control'], root);
+    write(mount, 'README.md', rule === 'encoded' ? Buffer.from('first release\r\n', 'utf16le') : 'first release\r\n');
+    const original = snapshot(root);
+    fails(sync(root), /Local edits detected.*README\.md/);
+    assert.deepEqual(snapshot(root), original);
+  }
+  const source = indexedSource(context, [['zero-byte.bin', Buffer.from([0, 13, 10, 255])],
+    ['control.bin', Buffer.from([1, 2, 3, 13, 10, 4, 5])]]);
+  for (const relative of ['zero-byte.bin', 'control.bin']) {
+    const { root, mount } = consumer(context);
+    git(['init', '--quiet', '.'], root);
+    git(['config', 'core.autocrlf', 'true'], root);
+    passes(invoke(root, ['--tag', 'v1.0.0', '--repo', source]));
+    git(['add', '--all'], root);
+    git(['commit', '--quiet', '-m', 'Fixture binary control'], root);
+    const raw = fs.readFileSync(path.join(mount, relative));
+    write(mount, relative, Buffer.from(raw.toString('latin1').replaceAll('\r\n', '\n'), 'latin1'));
+    const original = snapshot(root);
+    fails(invoke(root, ['--tag', 'v1.0.0', '--repo', source]), /Local edits detected/);
+    assert.deepEqual(snapshot(root), original);
+  }
+});
+
+test('Git-clean filtered edits refuse sync without executing the configured clean filter', context => {
+  const { root, mount } = consumer(context);
+  git(['init', '--quiet', '.'], root);
+  passes(sync(root));
+  write(root, '.gitattributes', '.copilot-toolkit/README.md text filter=mask\n');
+  const marker = path.join(root, 'clean-ran');
+  const filter = path.join(root, 'clean.cjs');
+  write(root, 'clean.cjs', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran'); process.stdout.write('first release\\n');`);
+  git(['config', 'filter.mask.clean', `"${process.execPath.replaceAll('\\', '/')}" "${filter.replaceAll('\\', '/')}"`], root);
+  write(root, '.gitignore', 'clean-ran\n');
+  git(['add', '--all'], root);
+  git(['commit', '--quiet', '-m', 'Fixture masked clean filter'], root);
+  for (const content of ['genuine edit hidden by clean filter\n', 'first release\r\n']) {
+    write(mount, 'README.md', content);
+    git(['add', '--', '.copilot-toolkit/README.md'], root);
+    assert.equal(git(['status', '--porcelain'], root), '');
+    assert.ok(fs.existsSync(marker), 'Consumer Git must actually exercise the configured clean filter');
+    fs.rmSync(marker);
+    const original = snapshot(root);
+    fails(sync(root), /Local edits detected.*README\.md/);
+    assert.ok(!fs.existsSync(marker), 'Installer must not execute a clean filter to verify edits');
+    assert.deepEqual(snapshot(root), original);
+  }
+});
+
+test('explicit text attributes allow reverse LF-to-raw-CRLF equivalence without autocrlf', context => {
+  const source = indexedSource(context, [['README.md', 'raw CRLF\r\n']]);
+  const { root, mount } = consumer(context);
+  git(['init', '--quiet', '.'], root);
+  git(['config', 'core.autocrlf', 'false'], root);
+  write(root, '.gitattributes', '.copilot-toolkit/README.md text eol=lf\n');
+  passes(invoke(root, ['--tag', 'v1.0.0', '--repo', source]));
+  assertGitPayload(mount, gitPayload('v1.0.0', source));
+  git(['add', '--all'], root);
+  git(['commit', '--quiet', '-m', 'Fixture CRLF source'], root);
+  fs.rmSync(path.join(mount, 'README.md'));
+  git(['checkout', '--', '.copilot-toolkit/README.md'], root);
+  assert.equal(fs.readFileSync(path.join(mount, 'README.md'), 'utf8'), 'raw CRLF\n');
+  assert.equal(git(['status', '--porcelain'], root), '');
+  passes(invoke(root, ['--tag', 'v1.0.0', '--repo', source]));
+  assertGitPayload(mount, gitPayload('v1.0.0', source));
+});
+
+for (const format of ['sha1', 'sha256']) {
+  test(`source object format ${format} overrides opposite inherited initialization defaults`, context => {
+    const source = indexedSource(context, [['README.md', 'raw source\n']], format);
+    if (!source) return;
+    const { root, mount } = consumer(context);
+    const opposite = format === 'sha1' ? 'sha256' : 'sha1';
+    passes(invoke(root, ['--tag', 'v1.0.0', '--repo', source], undefined, {
+      GIT_DEFAULT_HASH: opposite, GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'init.defaultObjectFormat', GIT_CONFIG_VALUE_0: opposite,
+    }));
+    assertGitPayload(mount, gitPayload('v1.0.0', source));
+  });
+}
+
+test('raw blobs ignore global and committed attributes without executing smudge filters', context => {
+  const source = indexedSource(context, [
+    ['.gitattributes', '*.txt text eol=crlf\n*.dat filter=visible\n'],
+    ['local.txt', 'committed attribute\n'], ['global.md', 'global attribute\n'],
+    ['filtered.dat', Buffer.from([0, 255, 13, 10, 128, 10])],
+  ]);
+  const { root, mount } = consumer(context);
+  const marker = path.join(root, 'filter-ran');
+  const filter = path.join(root, 'smudge.cjs');
+  write(root, 'smudge.cjs', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran'); process.stdout.write('CHANGED');`);
+  const attributes = path.join(root, 'global.attributes');
+  write(root, 'global.attributes', '*.md text eol=crlf\n');
+  const config = path.join(root, 'fixture.gitconfig');
+  git(['config', '--file', config, 'core.attributesFile', attributes], root);
+  git(['config', '--file', config, 'filter.visible.smudge', `"${process.execPath.replaceAll('\\', '/')}" "${filter.replaceAll('\\', '/')}"`], root);
+  git(['config', '--file', config, 'filter.visible.required', 'true'], root);
+  const original = snapshot(root);
+  passes(invoke(root, ['--tag', 'v1.0.0', '--repo', source], undefined, { GIT_CONFIG_GLOBAL: config }));
+  assert.ok(!fs.existsSync(marker), 'Installer must not execute the configured filter');
+  assertGitPayload(mount, gitPayload('v1.0.0', source));
+  assertConsumerUnchanged(root, original);
+});
+
+test('index-built source case and prefix collisions are validated before payload writes', context => {
+  const { root, mount } = consumer(context);
+  passes(sync(root));
+  for (const names of [['Foo', 'foo'], ['Foo', 'foo/nested.txt'], ['Foo/one.txt', 'foo/two.txt']]) {
+    const source = indexedSource(context, names.map(relative => [relative, `${relative}\n`]));
+    const original = snapshot(root);
+    const insensitive = ['win32', 'darwin'].includes(process.platform);
+    const result = invoke(root, ['--tag', 'v1.0.0', '--repo', source], insensitive ? 'no-materialization' : undefined);
+    if (insensitive) {
+      fails(result, /filesystem-equivalent path/);
+      assert.deepEqual(snapshot(root), original);
+    } else {
+      passes(result);
+      assertGitPayload(mount, gitPayload('v1.0.0', source));
+    }
+  }
+});
+
+test('index-built Unicode source prefixes retain distinct names outside the Darwin policy', context => {
+  const source = indexedSource(context, [['caf\u00e9', 'composed\n'], ['cafe\u0301/nested.txt', 'decomposed\n']]);
+  const { root, mount } = consumer(context);
+  passes(sync(root));
+  const original = snapshot(root);
+  const result = invoke(root, ['--tag', 'v1.0.0', '--repo', source], process.platform === 'darwin' ? 'no-materialization' : undefined);
+  if (process.platform === 'darwin') {
+    fails(result, /filesystem-equivalent path/);
+    assert.deepEqual(snapshot(root), original);
+  } else {
+    passes(result);
+    assertGitPayload(mount, gitPayload('v1.0.0', source));
+    assert.deepEqual(lockEntries(mount).map(([relative]) => relative).sort(), ['caf\u00e9', 'cafe\u0301/nested.txt'].sort());
+  }
+});
+
+test('native case-equivalent registrations and index gitlinks protect absent and empty mounts', context => {
+  const { root, mount } = consumer(context);
+  git(['init', '--quiet', '.'], root);
+  for (const registration of ['modules', 'index']) {
+    if (registration === 'modules') write(root, '.gitmodules', '[submodule "fixture"]\n\tpath = .COPILOT-TOOLKIT/nested\n');
+    else git(['update-index', '--add', '--cacheinfo', `160000,${firstCommit},.COPILOT-TOOLKIT/nested`], root);
+    for (const empty of [false, true]) {
+      if (empty) fs.mkdirSync(mount);
+      const original = snapshot(root);
+      if (['win32', 'darwin'].includes(process.platform)) {
+        fails(sync(root, 'v1.0.0', ['--force']), /submodule target/);
+        fails(invoke(root, ['--uninstall', '--force']), /submodule target/);
+        assert.deepEqual(snapshot(root), original);
+        assert.equal(fs.existsSync(mount), empty);
+      } else {
+        passes(sync(root));
+        passes(invoke(root, ['--uninstall']));
+        assert.deepEqual(snapshot(root), original);
+      }
+      if (fs.existsSync(mount)) fs.rmSync(mount, { recursive: true });
+    }
+    if (registration === 'modules') fs.rmSync(path.join(root, '.gitmodules'));
+  }
+});
+
+test('Darwin path policy simulation covers Unicode prefixes, lock duplicates and absent or empty ownership', context => {
+  const source = fs.readFileSync(installer, 'utf8');
+  const functions = source.slice(source.indexOf('function statIfPresent('), source.indexOf('function acquire('));
+  const policy = vm.runInNewContext(`${functions}\n({ readLock, registerPath, checkRegistration, inspectTarget });`, {
+    fs, path, createHash, Buffer, process: { platform: 'darwin' }, lockName: '.sync-lock', mountName: '.copilot-toolkit',
+    git: (args, cwd, allowNoMatch) => {
+      const result = execute(process.platform === 'win32' ? 'git.exe' : 'git', ['--no-pager', ...args], cwd);
+      assert.ok(result.status === 0 || (allowNoMatch && result.status === 1), result.stderr);
+      return result.stdout;
+    },
+  });
+  for (const names of [['Foo', 'foo'], ['Foo', 'foo/nested.txt'],
+    ['caf\u00e9', 'cafe\u0301/nested.txt'], ['caf\u00e9/one', 'cafe\u0301/two']]) {
+    const seen = new Map();
+    policy.registerPath(seen, names[0]);
+    assert.throws(() => policy.registerPath(seen, names[1]), /filesystem-equivalent path/);
+  }
+  const { root, mount } = consumer(context);
+  passes(sync(root));
+  const lock = fs.readFileSync(path.join(mount, '.sync-lock'), 'utf8');
+  assert.throws(() => policy.readLock(`${lock}${'0'.repeat(64)}  readme.md\n`), /filesystem-equivalent path/);
+  assert.throws(() => policy.readLock(`${lock}${'0'.repeat(64)}  caf\u00e9\n${'1'.repeat(64)}  cafe\u0301/child\n`), /filesystem-equivalent path/);
+  fs.renameSync(path.join(mount, 'README.md'), path.join(mount, 'cafe\u0301'));
+  write(mount, '.sync-lock', lock.replace('  README.md\n', '  caf\u00e9\n'));
+  write(mount, 'cafe\u0301', 'real edit under filesystem-normalized name\n');
+  assert.throws(() => policy.inspectTarget(root, mount, {}, false), /Local edits detected.*caf\u00e9/);
+  write(mount, 'cafe\u0301', 'first release\n');
+  assert.doesNotThrow(() => policy.inspectTarget(root, mount, {}, false));
+  const target = path.join(root, 'caf\u00e9', '.copilot-toolkit');
+  for (const registered of ['cafe\u0301/.COPILOT-TOOLKIT', 'cafe\u0301/.COPILOT-TOOLKIT/nested']) {
+    write(root, '.gitmodules', `[submodule "fixture"]\n\tpath = ${registered}\n`);
+    assert.throws(() => policy.checkRegistration(root, target), /registered submodule/);
+    fs.mkdirSync(target, { recursive: true });
+    assert.throws(() => policy.checkRegistration(root, target), /registered submodule/);
+    fs.rmSync(target, { recursive: true });
+  }
+  context.diagnostic('SIMULATED Darwin path policy only; Git and filesystem operations use the actual host, not a spoofed macOS executable environment.');
 });
 
 test('historical installer hands real Git payload and unchanged legacy lock to standalone lifecycle', context => {
@@ -534,9 +847,9 @@ test('missing repositories, missing tags and branch-only names preserve the old 
   const { root, mount } = consumer(context);
   passes(sync(root));
   const original = snapshot(root);
-  fails(sync(root, 'v8.8.8'), /Git fetch failed/);
-  fails(sync(root, 'v9.9.9'), /Git fetch failed/);
-  fails(invoke(root, ['--tag', 'v1.0.0', '--repo', path.join(temporary, 'absent repo')]), /Git fetch failed/);
+  fails(sync(root, 'v8.8.8'), /Git ls-remote failed/);
+  fails(sync(root, 'v9.9.9'), /Git ls-remote failed/);
+  fails(invoke(root, ['--tag', 'v1.0.0', '--repo', path.join(temporary, 'absent repo')]), /Git ls-remote failed/);
   assert.deepEqual(snapshot(root), original);
   assert.ok(fs.existsSync(mount));
   assert.ok(!fs.readdirSync(root).some(name => name.startsWith('.copilot-toolkit-sync-')));
