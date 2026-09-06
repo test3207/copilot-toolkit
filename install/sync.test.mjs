@@ -97,8 +97,10 @@ function lockEntries(mount) {
 
 function gitPayload(tag, repository = upstream) {
   const tree = git(['ls-tree', '-r', '-z', `refs/tags/${tag}`], repository, { encoding: null });
+  const text = tree.toString('utf8');
+  assert.deepEqual(Buffer.from(text, 'utf8'), tree, 'Git tree names are not valid UTF-8');
   const expected = new Map();
-  for (const record of tree.toString('utf8').split('\0').filter(Boolean)) {
+  for (const record of text.split('\0').filter(Boolean)) {
     const match = /^(100644|100755) blob ([0-9a-f]+)\t(.+)$/.exec(record);
     assert.ok(match, record);
     const [, mode, object, relative] = match;
@@ -128,6 +130,20 @@ function indexedSource(context, files, format = 'sha1') {
   return repository;
 }
 
+function rawNameSource(context, files) {
+  const repository = indexedSource(context, [['original.txt', 'original payload\n']]);
+  const records = files.slice().sort(([left], [right]) => Buffer.compare(left, right)).map(([name, bytes]) => {
+    const object = git(['hash-object', '-w', '--stdin'], repository, { input: bytes, stdio: ['pipe', 'pipe', 'pipe'] });
+    return Buffer.concat([Buffer.from(`100644 blob ${object}\t`), name, Buffer.from([0])]);
+  });
+  const input = Buffer.concat(records);
+  const tree = git(['mktree', '-z'], repository, { input, stdio: ['pipe', 'pipe', 'pipe'] });
+  const commit = git(['commit-tree', tree, '-p', 'HEAD', '-m', 'Fixture raw-name tree'], repository);
+  git(['update-ref', 'refs/tags/v2.0.0', commit], repository);
+  assert.deepEqual(git(['ls-tree', '-r', '-z', 'refs/tags/v2.0.0'], repository, { encoding: null }), input);
+  return repository;
+}
+
 function assertGitPayload(mount, expected) {
   assert.ok(!fs.existsSync(path.join(mount, '.git')));
   assert.deepEqual(Object.keys(snapshot(mount)).filter(relative => relative !== '.sync-lock').sort(), [...expected.keys()].sort());
@@ -140,7 +156,7 @@ function assertGitPayload(mount, expected) {
   }
 }
 
-function assertLockMetadata(text, tag, startedAt) {
+function assertLockMetadata(text, tag, startedAt, repository = upstream) {
   const header = text.replace(/^\uFEFF/, '').replaceAll('\r\n', '\n').split('\n---\n')[0];
   const fields = header.split('\n').filter(line => line && !line.startsWith('#'));
   assert.equal(fields.length, 4);
@@ -152,13 +168,13 @@ function assertLockMetadata(text, tag, startedAt) {
   const timestamp = Date.parse(metadata.synced_at);
   assert.ok(timestamp >= Math.floor(startedAt / 1000) * 1000 && timestamp <= Date.now(), metadata.synced_at);
   assert.deepEqual(metadata, {
-    tag, commit: git(['rev-parse', '--short', `refs/tags/${tag}^{commit}`]),
-    url: upstream, synced_at: metadata.synced_at,
+    tag, commit: git(['rev-parse', '--short', `refs/tags/${tag}^{commit}`], repository),
+    url: repository, synced_at: metadata.synced_at,
   });
 }
 
-function assertGitLock(mount, tag, expected, startedAt) {
-  assertLockMetadata(fs.readFileSync(path.join(mount, '.sync-lock'), 'utf8'), tag, startedAt);
+function assertGitLock(mount, tag, expected, startedAt, repository = upstream) {
+  assertLockMetadata(fs.readFileSync(path.join(mount, '.sync-lock'), 'utf8'), tag, startedAt, repository);
   assert.deepEqual(lockEntries(mount), [...expected].map(([relative, { bytes }]) => [
     relative, createHash('sha256').update(bytes).digest('hex'),
   ]).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0));
@@ -338,6 +354,166 @@ test('Git-selected tag payload and lock match independent tree/blob objects thro
   passes(invoke(root, ['--uninstall']));
   assert.deepEqual(snapshot(root), original);
   assert.deepEqual(fs.readdirSync(path.dirname(bootstrap)), ['sync.mjs']);
+});
+
+test('raw Git invalid UTF-8 names refuse initial install and upgrade before any payload write', context => {
+  const source = rawNameSource(context, [
+    [Buffer.from('a-first.txt'), Buffer.from('must not be materialized\n')],
+    [Buffer.from([0x66, 0x6f, 0x80]), Buffer.from('invalid-name payload\n')],
+  ]);
+  assert.throws(() => gitPayload('v2.0.0', source), /not valid UTF-8/);
+  const { root, mount } = consumer(context);
+  const original = snapshot(root);
+  const originalEntries = fs.readdirSync(root);
+  const args = ['--tag', 'v2.0.0', '--repo', source];
+  for (const fault of [undefined, 'no-materialization']) {
+    fails(invoke(root, args, fault), /UTF-8/);
+    assert.equal(fs.existsSync(mount), false);
+    assert.deepEqual(snapshot(root), original);
+    assert.deepEqual(fs.readdirSync(root), originalEntries);
+  }
+  passes(invoke(root, ['--tag', 'v1.0.0', '--repo', source]));
+  assertGitPayload(mount, gitPayload('v1.0.0', source));
+  const installed = snapshot(root);
+  const installedEntries = fs.readdirSync(root);
+  for (const extra of [[], ['--force']]) {
+    for (const fault of [undefined, 'no-materialization']) {
+      fails(invoke(root, [...args, ...extra], fault), /UTF-8/);
+      assert.deepEqual(snapshot(root), installed);
+      assert.deepEqual(fs.readdirSync(root), installedEntries);
+    }
+  }
+});
+
+test('raw Git valid UTF-8 replacement character and ordinary Unicode names retain exact bytes', context => {
+  const files = [
+    [Buffer.from([0x66, 0x6f, 0xef, 0xbf, 0xbd]), Buffer.from('literal replacement character\n')],
+    [Buffer.from('ordinary-\u6d4b\u8bd5.txt', 'utf8'), Buffer.from([0, 10, 13, 128, 255])],
+  ];
+  const source = rawNameSource(context, files);
+  const expected = gitPayload('v2.0.0', source);
+  const { root, mount } = consumer(context);
+  const original = snapshot(root);
+  for (const extra of [[], [], ['--force']]) {
+    passes(invoke(root, ['--tag', 'v2.0.0', '--repo', source, ...extra]));
+    assertGitPayload(mount, expected);
+    assert.deepEqual(fs.readdirSync(mount, { encoding: 'buffer' }).sort(Buffer.compare),
+      [Buffer.from('.sync-lock'), ...files.map(([name]) => name)].sort(Buffer.compare));
+    assertConsumerUnchanged(root, original);
+  }
+  passes(invoke(root, ['--uninstall']));
+  assert.deepEqual(snapshot(root), original);
+});
+
+test('POSIX actual invalid-byte filename is rejected without lossy renaming', {
+  skip: process.platform === 'win32' ? 'POSIX byte filenames are not supported on Windows' : false,
+}, context => {
+  const source = indexedSource(context, [['original.txt', 'original payload\n']]);
+  const name = Buffer.from([0x66, 0x6f, 0x80]);
+  const bytes = Buffer.from('actual invalid-byte filename\n');
+  fs.writeFileSync(Buffer.concat([Buffer.from(`${source}/`), name]), bytes);
+  assert.ok(fs.readdirSync(source, { encoding: 'buffer' }).some(entry => entry.equals(name)));
+  git(['add', '--all'], source);
+  git(['commit', '--quiet', '-m', 'Fixture actual POSIX byte filename'], source);
+  git(['tag', 'v2.0.0'], source);
+  const object = git(['hash-object', '--stdin'], source, { input: bytes, stdio: ['pipe', 'pipe', 'pipe'] });
+  assert.deepEqual(git(['ls-tree', '-r', '-z', 'refs/tags/v2.0.0'], source, { encoding: null }),
+    Buffer.concat([Buffer.from(`100644 blob ${object}\t`), name, Buffer.from([0])]));
+  const { root, mount } = consumer(context);
+  const original = snapshot(root);
+  fails(invoke(root, ['--tag', 'v2.0.0', '--repo', source]), /UTF-8/);
+  assert.equal(fs.existsSync(mount), false);
+  assert.deepEqual(snapshot(root), original);
+  passes(invoke(root, ['--tag', 'v1.0.0', '--repo', source]));
+  const installed = snapshot(root);
+  const names = fs.readdirSync(mount, { encoding: 'buffer' });
+  fails(invoke(root, ['--tag', 'v2.0.0', '--repo', source]), /UTF-8/);
+  assert.deepEqual(snapshot(root), installed);
+  assert.deepEqual(fs.readdirSync(mount, { encoding: 'buffer' }), names);
+});
+
+for (const [label, separator] of [['U+2028', '\u2028'], ['U+2029', '\u2029']]) {
+  test(`repository dirname with ${label} preserves lock metadata through the complete lifecycle`, context => {
+    const source = path.join(temporary, `upstream-${separator}=full-value`);
+    fs.cpSync(upstream, source, { recursive: true });
+    context.after(() => fs.rmSync(source, { recursive: true, force: true }));
+    const sourceOriginal = snapshot(source);
+    const { root, mount } = consumer(context);
+    git(['init', '--quiet', '.'], root);
+    git(['add', '--all'], root);
+    git(['commit', '--quiet', '-m', 'Fixture consumer with unusual upstream path'], root);
+    const original = snapshot(root);
+    const install = (tag, extra = []) => {
+      const startedAt = Date.now();
+      const expected = gitPayload(tag, source);
+      passes(invoke(root, ['--tag', tag, '--repo', source, ...extra]));
+      assertGitPayload(mount, expected);
+      assertGitLock(mount, tag, expected, startedAt, source);
+      assertConsumerUnchanged(root, original);
+      assert.deepEqual(snapshot(source), sourceOriginal);
+    };
+    for (const [tag, extra] of [['v1.0.0', []], ['v1.0.0', []], ['v1.0.0', ['--force']],
+      ['v2.0.0', []], ['v1.0.0', []]]) {
+      install(tag, extra);
+    }
+    const lockFile = path.join(mount, '.sync-lock');
+    fs.writeFileSync(lockFile, `\uFEFF${fs.readFileSync(lockFile, 'utf8').replaceAll('\n', '\r\n')}`);
+    install('v1.0.0');
+    write(mount, 'README.md', 'genuine tracked edit\n');
+    const edited = snapshot(root);
+    fails(invoke(root, ['--tag', 'v2.0.0', '--repo', source]), /Local edits detected/);
+    assert.deepEqual(snapshot(root), edited);
+    install('v2.0.0', ['--force']);
+    for (const extra of [[], ['--force']]) {
+      write(mount, 'README.md', 'edited before explicit uninstall\n');
+      passes(invoke(root, ['--uninstall', ...extra]));
+      assert.equal(fs.existsSync(mount), false);
+      assert.deepEqual(snapshot(root), original);
+      passes(invoke(root, ['--uninstall', ...extra]));
+      assert.deepEqual(snapshot(root), original);
+      if (!extra.length) install('v1.0.0');
+    }
+    assert.deepEqual(snapshot(source), sourceOriginal);
+  });
+}
+
+test('source Unicode line separators remain unsupported before payload writes', context => {
+  for (const separator of ['\u2028', '\u2029']) {
+    const source = rawNameSource(context, [
+      [Buffer.from('a-first.txt'), Buffer.from('must not be materialized\n')],
+      [Buffer.from(`file${separator}name.txt`), Buffer.from('unsupported source name\n')],
+    ]);
+    const { root, mount } = consumer(context);
+    const original = snapshot(root);
+    const args = ['--tag', 'v2.0.0', '--repo', source];
+    fails(invoke(root, args, 'no-materialization'), /Unsupported source link or special entry/);
+    assert.equal(fs.existsSync(mount), false);
+    assert.deepEqual(snapshot(root), original);
+    passes(invoke(root, ['--tag', 'v1.0.0', '--repo', source]));
+    const installed = snapshot(root);
+    fails(invoke(root, [...args, '--force'], 'no-materialization'), /Unsupported source link or special entry/);
+    assert.deepEqual(snapshot(root), installed);
+  }
+});
+
+test('lock headers reject CR injection and unknown or duplicate keys without loosening manifest parsing', context => {
+  const { root, mount } = consumer(context);
+  passes(sync(root));
+  const lockFile = path.join(mount, '.sync-lock');
+  const valid = fs.readFileSync(lockFile, 'utf8');
+  for (const invalid of [
+    valid.replace('url=', 'url=unexpected\r'),
+    valid.replace('url=', 'unknown='),
+    valid.replace('url=', 'url=injected\nurl='),
+    valid.replace('url=', 'url=injected\r\nurl='),
+    ...['\u2028', '\u2029'].map(separator => `${valid}${'a'.repeat(64)}  file${separator}name.txt\n`),
+  ]) {
+    fs.writeFileSync(lockFile, invalid);
+    const original = snapshot(root);
+    fails(sync(root, 'v2.0.0', ['--force']), /Malformed/);
+    fails(invoke(root, ['--uninstall', '--force']), /Malformed/);
+    assert.deepEqual(snapshot(root), original);
+  }
 });
 
 for (const autocrlf of ['true', 'false']) {
@@ -792,6 +968,7 @@ test('invalid invocations exit 2 without touching the consumer', context => {
   const original = snapshot(root);
   for (const args of [[], ['--tag'], ['--repo'], ['--tag', '--force'], ['--tag', 'main'],
     ['--tag', 'v1.0.0', '--repo', '--force'], ['--unknown'], ['stray'],
+    ...['\r', '\n', '\r\n'].map(separator => ['--tag', 'v1.0.0', '--repo', `${upstream}${separator}url=injected`]),
     ['--uninstall', '--tag', 'v1.0.0'], ['--uninstall', '--repo', upstream],
     ['--tag', 'v1.0.0', '--tag', 'v2.0.0'], ['--help', '--unknown']]) {
     fails(invoke(root, args), /Usage:/, 2);

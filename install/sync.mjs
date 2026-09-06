@@ -52,7 +52,7 @@ function parseArgs(args) {
   return options;
 }
 
-function git(args, cwd, allowNoMatch = false, workTree, outputFd) {
+function git(args, cwd, allowNoMatch = false, workTree, outputFd, binary = false) {
   const repositoryEnv = new Set([
     'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
     'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_QUARANTINE_PATH', 'GIT_NAMESPACE',
@@ -68,12 +68,12 @@ function git(args, cwd, allowNoMatch = false, workTree, outputFd) {
     '-c', 'credential.interactive=false',
     '-c', 'protocol.ext.allow=never', ...args,
   ], {
-    cwd, encoding: 'utf8', stdio: ['ignore', outputFd ?? 'pipe', 'pipe'], windowsHide: true,
+    cwd, encoding: binary ? null : 'utf8', stdio: ['ignore', outputFd ?? 'pipe', 'pipe'], windowsHide: true,
     timeout: 60000, maxBuffer: 16 * 1024 * 1024,
     env: { ...env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', GCM_INTERACTIVE: 'Never' },
   });
   if (result.error || (result.status !== 0 && !(allowNoMatch && result.status === 1))) {
-    throw new Error(`Git ${args[0]} failed: ${result.error?.message || result.stderr.trim() || `exit ${result.status}`}`);
+    throw new Error(`Git ${args[0]} failed: ${result.error?.message || result.stderr.toString().trim() || `exit ${result.status}`}`);
   }
   return result.stdout;
 }
@@ -130,7 +130,7 @@ function readLock(text) {
       continue;
     }
     if (!body) {
-      const match = /^(tag|commit|url|synced_at)=(.+)$/.exec(line);
+      const match = /^(tag|commit|url|synced_at)=([^\r\n]+)$/.exec(line);
       if (!match || metadata.has(match[1])) throw new Error('Malformed sync lock metadata.');
       metadata.set(match[1], match[2]);
     } else {
@@ -278,7 +278,11 @@ function acquire(root, tree, options) {
   git(['init', '--quiet', `--object-format=${format}`, tree], root, false, tree);
   git(['fetch', '--quiet', '--depth', '1', '--no-tags', '--', options.repo, `${tagRef}:${tagRef}`], root, false, tree);
   const commit = stagedGit(['rev-parse', '--verify', `${tagRef}^{commit}`]).trim();
-  const records = stagedGit(['ls-tree', '-r', '-z', commit]);
+  const treeRecords = git(['ls-tree', '-r', '-z', commit], tree, false, tree, undefined, true);
+  const records = treeRecords.toString('utf8');
+  if (!Buffer.from(records, 'utf8').equals(treeRecords)) {
+    throw new Error('Unsupported source path: Git tree names must be valid UTF-8.');
+  }
   const payload = [];
   const names = new Map();
   for (const record of records.split('\0').filter(Boolean)) {

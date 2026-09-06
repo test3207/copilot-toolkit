@@ -185,6 +185,10 @@ init handoff is pending (#45); there is no init command to invoke here.
   Windows checks case equivalence. macOS conservatively treats case and Unicode
   normalization variants as equivalent, which can refuse otherwise valid paths
   on case-sensitive volumes. Linux names remain case-sensitive.
+* Source paths must be valid UTF-8. Invalid byte names (possible on POSIX) are
+  rejected before any payload writes, not silently renamed. A valid UTF-8
+  U+FFFD is allowed. U+2028/U+2029 are supported in upstream `--repo` metadata,
+  but remain unsupported in payload paths.
 * Raw materialization, manifest and lock finish in a same-volume staging directory before
   activation. The old tree stays in a backup until activation succeeds and is
   restored if activation fails. Cleanup or restoration failures return `1` and
