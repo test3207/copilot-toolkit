@@ -31,7 +31,7 @@ Each op below documents a `gh` recipe and a REST recipe. `cli` runs `gh`; `rest`
 
 ## getPrInfo
 
-`node .copilot-toolkit/scripts/github-rest.mjs get-pr --owner {github-owner} --repo {github-repo} --pr-id {prId} --out pr-review/{repo}/{prId}/raw-pr.json` (add `--host {github-host}` for GHES) — prefers the authenticated `gh` CLI, falls back to REST + `GITHUB_TOKEN` automatically. Saves the PR object with the fields the mapping below needs.
+`node .copilot-toolkit/build/scripts/github-rest.mjs get-pr --owner {github-owner} --repo {github-repo} --pr-id {prId} --out pr-review/{repo}/{prId}/raw-pr.json` (add `--host {github-host}` for GHES) — prefers the authenticated `gh` CLI, falls back to REST + `GITHUB_TOKEN` automatically. Saves the PR object with the fields the mapping below needs.
 
 ### Mapping to standard `prInfo`
 
@@ -55,7 +55,7 @@ Each op below documents a `gh` recipe and a REST recipe. `cli` runs `gh`; `rest`
 
 GitHub PRs have two distinct comment surfaces — the script fetches BOTH into one file:
 
-`node .copilot-toolkit/scripts/github-rest.mjs get-threads --owner {github-owner} --repo {github-repo} --pr-id {prId} --out pr-review/{repo}/{prId}/raw-threads.json` (add `--host {github-host}` for GHES) → `{ issueComments: [...], reviewComments: [...] }`. `issueComments` = general PR conversation ("Add a comment"); `reviewComments` = file-anchored ("Review changes").
+`node .copilot-toolkit/build/scripts/github-rest.mjs get-threads --owner {github-owner} --repo {github-repo} --pr-id {prId} --out pr-review/{repo}/{prId}/raw-threads.json` (add `--host {github-host}` for GHES) → `{ issueComments: [...], reviewComments: [...] }`. `issueComments` = general PR conversation ("Add a comment"); `reviewComments` = file-anchored ("Review changes").
 
 ### Filtering
 
@@ -67,7 +67,7 @@ GitHub PRs have two distinct comment surfaces — the script fetches BOTH into o
 
 Optional override of Step 4's default (`git --no-pager diff origin/{target}...origin/{source}`). Use it **only** as a fallback when that three-dot diff is empty because the PR is already merged (its head is an ancestor of the target) -- e.g. a Step 1 override that reviews a merged PR. `gh pr diff` returns the canonical PR patch regardless of merge state:
 
-`node .copilot-toolkit/scripts/github-rest.mjs get-diff --owner {github-owner} --repo {github-repo} --pr-id {prId} --out pr-review/{repo}/{prId}/diff.txt` (add `--host {github-host}` for GHES) — the canonical PR patch regardless of merge state.
+`node .copilot-toolkit/build/scripts/github-rest.mjs get-diff --owner {github-owner} --repo {github-repo} --pr-id {prId} --out pr-review/{repo}/{prId}/diff.txt` (add `--host {github-host}` for GHES) — the canonical PR patch regardless of merge state.
 
 ## fileLinkTemplate
 
@@ -132,7 +132,7 @@ Patterns NOT matched by `@<word>` (safe):
 
 ## postComment
 
-`node .copilot-toolkit/scripts/github-rest.mjs post-review-comment --owner {github-owner} --repo {github-repo} --pr-id {prId} --body-file pr-review/{repo}/{prId}/pr-comment.md --pr-file pr-review/{repo}/{prId}/raw-pr.json --diff-file pr-review/{repo}/{prId}/diff.txt` (add `--host {github-host}` for GHES) — posts the curated comment as a **file-anchored review comment** (`subject_type=file`) and prints `{ url, resolvable }`. Prefers `gh`; falls back to REST + `GITHUB_TOKEN`.
+`node .copilot-toolkit/build/scripts/github-rest.mjs post-review-comment --owner {github-owner} --repo {github-repo} --pr-id {prId} --body-file pr-review/{repo}/{prId}/pr-comment.md --pr-file pr-review/{repo}/{prId}/raw-pr.json --diff-file pr-review/{repo}/{prId}/diff.txt` (add `--host {github-host}` for GHES) — posts the curated comment as a **file-anchored review comment** (`subject_type=file`) and prints `{ url, resolvable }`. Prefers `gh`; falls back to REST + `GITHUB_TOKEN`.
 
 ### Why a file-anchored review comment (resolvable)
 

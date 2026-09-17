@@ -32,7 +32,7 @@ All ownership / review / CI / observability fields are `TODO`.
 Extract the identity from the URL with the tested parser (handles SSH `git@host:group/repo` and HTTPS forms; `cloneUrl` is echoed back verbatim):
 
 ```text
-node .copilot-toolkit/scripts/parse-git-remote.mjs "<user input>"
+node .copilot-toolkit/build/scripts/parse-git-remote.mjs "<user input>"
 ```
 
 It emits `host`, `org`, `repoName`, and `cloneUrl`; `project` is always `""` for generic hosts:

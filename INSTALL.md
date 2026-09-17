@@ -5,7 +5,7 @@ consumer's working tree. Two mount modes are supported:
 
 | Mode | Update mechanism | When to pick |
 | --- | --- | --- |
-| **Submodule** | `git submodule update --remote` (or `git submodule add -b <tag>` for a fresh pin) | Default. Mount path is a git submodule; VS Code sees upstream changes immediately after `git submodule update`. |
+| **Submodule** | Explicit Git revision selection, followed by explicit build/init | Default for source maintainers. Source changes do not change the active runtime until a successful build. |
 | **Sync** | `node .copilot-toolkit/install/sync.mjs --tag vX.Y.Z` | Consumer can't use submodules (policy, monorepo, etc.) or wants explicit per-tag opt-in with no transitive git surface. |
 
 Both modes share:
@@ -13,8 +13,8 @@ Both modes share:
 * Mount path: `.copilot-toolkit/` (relative to consumer repo root).
 * Settings snippet: `.vscode/settings.json` entries in
   [`install/settings-snippet.jsonc`](install/settings-snippet.jsonc).
-* Discovery: VS Code Copilot Chat picks up `.copilot-toolkit/.github/skills/`,
-  `.copilot-toolkit/.github/agents/`, and `.copilot-toolkit/.github/prompts/`
+* Discovery: VS Code Copilot Chat picks up `.copilot-toolkit/build/.github/skills/`,
+  `.copilot-toolkit/build/.github/agents/`, and `.copilot-toolkit/build/.github/prompts/`
   via those settings.
 
 The consumer's own `.github/skills/`, `.github/agents/`, and
@@ -31,6 +31,59 @@ shipped prompts use neutral server names (`ado-1`, `ado-2`, `kusto-1`,
 `incident-1`, ...) that you either match in your `.vscode/mcp.json` or override
 locally.
 
+## Build and Init
+
+Node 24 LTS or newer is required. A source checkout and a minimal runtime
+package are different inputs:
+
+| Selected input | Command from consumer root | Result |
+| --- | --- | --- |
+| Source Git checkout containing the builder | `node .copilot-toolkit/install/init.mjs --build` | Snapshot current inputs, validate a complete candidate, activate it, merge discovery. No Git advancement. |
+| Already built package containing `build/` and `install/` | `node .copilot-toolkit/install/init.mjs` | Validate existing bytes and merge discovery; no builder, Git checkout or npm dependency needed. |
+| Historical or source-only sync tag | Follow that tag's setup | Acquisition alone is not ready. Do not attribute a source build to the consumer's Git checkout. |
+
+Use `--consumer-root <path>` when invoking from another directory. The toolkit
+mount comes from the entry script's location; the consumer comes from this flag
+or the caller's cwd. Registry, review configuration, instructions, worktrees,
+metrics and scratch output remain consumer-owned. Init never copies a project
+instruction template automatically or modifies user-profile settings.
+
+For self-hosting, run `node install/init.mjs --build` from the toolkit checkout.
+Discovery uses `build/.github/` and explicitly disables the matching source
+locations. For a later explicit rebuild without settings changes, run
+`node scripts/build.mjs` from the source checkout. It does not fetch or update
+Git, and it copies declared working-tree buffers byte-for-byte. The finite
+declaration is in `install/runtime.mjs`; a newly required runtime resource must
+be declared there and in the independent expected-set test. Build-only inputs
+are declared separately in `scripts/build.mjs`.
+
+The ignored `build/provenance.json` records the full commit, relevant dirty
+state and sorted SHA-256 input/payload identities. It contains no absolute
+machine paths. Build output includes only declared runtime resources and the
+package contains the original pinned JSONC parser; private preferences, tests,
+authoring tools and repository metadata are excluded. Never edit built files.
+
+Init preserves unrelated JSONC comments, formatting and settings, and keeps
+deliberate disabled toolkit entries. Malformed JSONC, duplicate/conflicting
+ownership, corrupt packages and linked targets fail without resetting settings.
+Required activation/settings writes are transactional: ordinary failures restore
+the old runtime/settings. Restoration failure retains a recovery backup and
+reports its location; inspect it before manual recovery or another attempt.
+First-time failure does not wire an unusable runtime. These are ordinary-failure
+guarantees, not concurrent-operation or crash-proof atomicity guarantees.
+
+Exit `0` means completion, possibly with capability warnings; `2` means invalid
+arguments; required failures are nonzero. Failed attempts report runtime
+availability separately. Environment probes are read-only, at most 2.5 seconds
+each within a 15-second budget. Missing task-specific tools/authentication and
+unverified endpoint/proxy reachability warn rather than gate all tools. No
+software installation, login, token printing or remote-update probe is performed.
+
+Reload VS Code after initialization. Verify the ignored build is explicitly
+discovered, source discovery is excluded, and a representative command loads
+the built path. Filesystem validation is not editor acceptance. Release-asset
+delivery remains planned; this change does not publish a distribution channel.
+
 ---
 
 ## Scenario 1: Fresh consumer + submodule (recommended)
@@ -41,7 +94,7 @@ A new repo with no existing copilot toolkit config.
 
 * Consumer repo is a git repo with an unmodified `.vscode/settings.json`
   (or none).
-* `git` ≥ 2.20 and PowerShell 7 (`pwsh`) on PATH.
+* Git 2.29+ and PowerShell 7 (`pwsh`) on PATH.
 * Node.js 24+ on PATH. Use a supported LTS release; Node 24 LTS is recommended.
   The consumer-reachable helpers under `scripts/` are Node, and `run-safe.mjs`
   additionally needs PowerShell 7 on Windows.
@@ -52,23 +105,18 @@ A new repo with no existing copilot toolkit config.
 # 1. Add the submodule pinned to a release tag (see Releases, linked above).
 git submodule add -b <tag> https://github.com/test3207/copilot-toolkit.git .copilot-toolkit
 
-# 2. Wire discovery in .vscode/settings.json.
-#    If the file doesn't exist, create it with the snippet contents below;
-#    otherwise merge the three keys in.
-New-Item -ItemType Directory -Force -Path .vscode | Out-Null
-Copy-Item .copilot-toolkit/install/settings-snippet.jsonc .vscode/settings.json -WhatIf
-# Inspect the -WhatIf output. If happy, re-run without -WhatIf, then open the
-# file and remove the leading comment block if your tooling rejects // in JSON.
+# 2. For a source tag containing build/init, explicitly build and merge discovery.
+node .copilot-toolkit/install/init.mjs --build
 
 # 3. Copy the project-instructions starter template and fill in the
 #    {{PLACEHOLDER}} blocks. This is the system prompt loaded into every
 #    chat session, so a missing copilot-instructions.md leaves the agent
 #    without project context. The template is shipped under
-#    .copilot-toolkit/templates/ and is intentionally NOT auto-installed;
+#    .copilot-toolkit/build/templates/ and is intentionally NOT auto-installed;
 #    every consumer fills it in by hand because the content (project
 #    scope, tech stack, MCP mapping) is consumer-specific.
 New-Item -ItemType Directory -Force -Path .github | Out-Null
-Copy-Item .copilot-toolkit/templates/copilot-instructions.template.md .github/copilot-instructions.md
+Copy-Item .copilot-toolkit/build/templates/copilot-instructions.template.md .github/copilot-instructions.md
 # Open .github/copilot-instructions.md and fill in every {{PLACEHOLDER}}
 # block; delete OPTIONAL sections that don't apply to this consumer.
 
@@ -125,20 +173,13 @@ Invoke-WebRequest "https://raw.githubusercontent.com/test3207/copilot-toolkit/$b
 # 2. Run it. Populates .copilot-toolkit/ and writes .copilot-toolkit/.sync-lock.
 node sync-bootstrap.mjs --tag $tag
 
-# 3. Wire .vscode/settings.json (same as Scenario 1 step 2).
-New-Item -ItemType Directory -Force -Path .vscode | Out-Null
-Copy-Item .copilot-toolkit/install/settings-snippet.jsonc .vscode/settings.json
-
-# 4. Copy + fill the project-instructions starter template
-#    (same as Scenario 1 step 3; see that scenario for rationale).
-New-Item -ItemType Directory -Force -Path .github | Out-Null
-Copy-Item .copilot-toolkit/templates/copilot-instructions.template.md .github/copilot-instructions.md
-# Open .github/copilot-instructions.md and fill in every {{PLACEHOLDER}}
-# block; delete OPTIONAL sections that don't apply.
+# 3. Acquisition is complete, not runtime initialization.
+# Follow the selected tag's setup. Only a built package can use ordinary init.
+# Source-only historical tags retain their legacy setup instructions.
 
 # 5. Commit everything.
 Remove-Item sync-bootstrap.mjs
-git add .copilot-toolkit .vscode/settings.json .github/copilot-instructions.md
+git add .copilot-toolkit
 git commit -m "Add copilot-toolkit (sync mode, <tag>)"
 ```
 
@@ -152,8 +193,10 @@ node sync-bootstrap.mjs --tag "$tag"
 rm sync-bootstrap.mjs
 ```
 
-Settings, project instructions, and registry setup remain manual. The separate
-init handoff is pending (#45); there is no init command to invoke here.
+Project instructions and registry setup remain consumer-owned. When the selected
+package actually includes a complete built runtime, ordinary init performs the
+discovery handoff described above. Source-only sync does not produce that package,
+and init never silently imports authoring code or builds using a parent checkout.
 
 ### Sync safety and compatibility
 
@@ -209,8 +252,7 @@ any of it.
 **Prereqs**
 
 * As Scenario 1.
-* Read the consumer's existing `.vscode/settings.json` first -- you'll
-  hand-merge.
+* Init will structurally merge the consumer's existing JSONC settings.
 
 **Steps**
 
@@ -218,16 +260,12 @@ any of it.
 # 1. Mount the submodule (same as Scenario 1).
 git submodule add -b <tag> https://github.com/test3207/copilot-toolkit.git .copilot-toolkit
 
-# 2. Hand-merge .vscode/settings.json. Open it and add the three keys from
-#    .copilot-toolkit/install/settings-snippet.jsonc. If the consumer already
-#    uses chat.agentSkillsLocations / chat.agentFilesLocations /
-#    chat.promptFilesLocations for other dirs, just add the
-#    ".copilot-toolkit/.github/skills" / "...agents" / "...prompts" entries
-#    alongside the existing entries (the value is a map of path -> bool).
+# 2. For a source checkout with build/init, preserve existing JSONC and build.
+node .copilot-toolkit/install/init.mjs --build
 
 # 3. Confirm the consumer's existing .github/copilot-instructions.md still
 #    governs the project. The toolkit ships a STARTER TEMPLATE at
-#    .copilot-toolkit/templates/copilot-instructions.template.md for fresh
+#    .copilot-toolkit/build/templates/copilot-instructions.template.md for fresh
 #    consumers (see Scenarios 1 + 2), but never writes to
 #    .github/copilot-instructions.md directly -- your existing file is
 #    untouched.
@@ -262,7 +300,7 @@ Invoke-WebRequest "https://raw.githubusercontent.com/test3207/copilot-toolkit/$b
 node sync-bootstrap.mjs --tag $tag
 Remove-Item sync-bootstrap.mjs
 
-# Hand-merge .vscode/settings.json as in Scenario 3 step 2.
+# Acquisition only: follow the selected tag's build/init or historical setup.
 
 git add .copilot-toolkit .vscode/settings.json
 git commit -m "Mount copilot-toolkit (sync, <tag>)"
@@ -322,6 +360,12 @@ If the current tag predates the Node entry point, re-download a modern bootstrap
 as in Scenario 2 and run `node sync-bootstrap.mjs --tag <tag>` instead. Use the
 same approach to select newer installer behavior independently of the target tag.
 
+After selecting a source checkout with the builder, explicitly run
+`node .copilot-toolkit/install/init.mjs --build`. For a complete built package,
+run ordinary init instead. Historical source-only sync tags retain their own
+setup. Neither updating a submodule nor successful sync activates a new runtime
+through this shared build/init lifecycle automatically.
+
 **Verify (both modes)**
 
 1. Reload VS Code.
@@ -332,7 +376,8 @@ same approach to select newer installer behavior independently of the target tag
    copied from `templates/copilot-instructions.template.md` -- or any prose or
    recipe of your own that invokes a `scripts/` helper -- keeps naming whatever
    path was current when you wrote it. Grep your repo for `.copilot-toolkit/scripts/`
-   and confirm each hit still exists at the tag you just moved to, and that its
+  and migrate runtime calls to `.copilot-toolkit/build/scripts/`. Keep source
+  authoring commands at source paths. Confirm each runtime helper exists and its
    options and exit codes still mean what your recipe assumes; a stale
    invocation fails at run time, and a stale one inside a gate recipe can fail
    *open*.
@@ -380,23 +425,46 @@ ownership, lock-path and link checks still apply, even with `--force`.
   `--force` only to discard tracked edits. An older target can remove the newer
   installed entry point, so retain this bootstrap for later sync or uninstall.
 
+Checkout or sync alone does not complete runtime rollback. Finish both modes
+with [Build and Init](#build-and-init); the commands are repeated here because
+selecting a revision can leave a newer ignored runtime active. From the consumer
+root, choose by the selected target's capabilities, not by a leftover `build/`:
+
+* **Source checkout** with `scripts/build.mjs` and `install/init.mjs`: run
+  `node .copilot-toolkit/install/init.mjs --build` to build and activate that source.
+* **Built package** containing its own complete `build/` and `install/`: run
+  `node .copilot-toolkit/install/init.mjs` to validate it and merge discovery.
+* **Historical source-only** target without build/init: do not invoke an
+  unavailable entry point. Follow the target tag's own setup, then remove or disable
+  only toolkit discovery entries still pointing at the newer
+  `.copilot-toolkit/build/.github/` locations in the three discovery maps.
+  Preserve unrelated entries and deliberate `false` values, including disabled
+  toolkit choices. Do not remove source discovery required by that target's setup.
+
+For build/init targets, require successful init and confirm its reported
+`sourceCommit` and `inputIdentity` identify the intended rollback revision and
+inputs. Reload VS Code in either case and verify a representative command loads
+the selected tag's runtime: built paths for build/init targets, or the target's
+documented layout for historical source-only targets, never the leftover newer
+runtime. Record any resulting consumer settings changes with the rollback.
+
 ---
 
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| `/` menu doesn't show toolkit skills after install | Settings paths wrong or window not reloaded | Run `Developer: Reload Window`; verify the three settings keys point at `.copilot-toolkit/.github/skills` / `.copilot-toolkit/.github/agents` / `.copilot-toolkit/.github/prompts` (not bare `.copilot-toolkit/skills`). |
+| `/` menu doesn't show toolkit skills after init | Build missing, settings paths wrong or window not reloaded | Verify readiness, then reload. The three discovery maps must point at `.copilot-toolkit/build/.github/skills`, `agents` and `prompts`. |
 | `git submodule update --remote` does nothing | `.gitmodules` has no `branch` entry pinned | `git config -f .gitmodules submodule..copilot-toolkit.branch vX.Y.Z` (then commit). |
 | `node .copilot-toolkit/install/sync.mjs --tag vX.Y.Z` refuses with "Local edits detected" | One or more files inside `.copilot-toolkit/` differ from the previously-synced manifest (`.copilot-toolkit/.sync-lock`) beyond permitted text newline equivalence | Either restore the file to its upstream content, or add `--force` to overwrite and discard the local edit. Never edit files inside `.copilot-toolkit/` -- propose the change upstream instead. |
-| Subagent fails with "skill file not found" referencing `.github/skills/<tool>/...` | Subagent didn't receive the `toolkit-root` input from the calling prompt | Verify the consumer's prompt computes `$toolkitRoot = if (Test-Path '.copilot-toolkit/.github') { '.copilot-toolkit/.github' } else { '.github' }` at Step 0 and passes `toolkit-root: $toolkitRoot` to the subagent. |
+| Subagent fails with "skill file not found" | Wrong `toolkit-root` input | Pass the resolved `.copilot-toolkit/build/.github` or self-hosted `build/.github` root; missing builds must stop, never fall back to source. |
 | Shipped slash command (`/pr-review`, `/work`, etc.) starts but no MCP tools fire | The prompt's `tools:` allowlist references server names (e.g. `ado-1`) that don't exist in the consumer's `.vscode/mcp.json` | Either rename the consumer's mcp.json entries to match the placeholder names (see "MCP server naming convention" below), or copy the prompt to the consumer's own `.github/prompts/` and adjust the `tools:` list. |
 
 ---
 
 ## MCP server naming convention
 
-The prompts shipped under `.copilot-toolkit/.github/prompts/` reference MCP
+The prompts shipped under `.copilot-toolkit/build/.github/prompts/` reference MCP
 servers with neutral numbered placeholders so the toolkit stays host-agnostic.
 VS Code resolves each `tools:` entry by exact MCP-server-name match against
 `.vscode/mcp.json`; mismatched entries are silently dropped at runtime, so a

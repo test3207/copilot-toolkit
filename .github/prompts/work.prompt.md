@@ -27,9 +27,11 @@ Where `<input>` may be:
 
 ## Flow
 
+For this standalone entry and its delegated workflow, resolve toolkit-owned helper/template examples from the parent of `toolkit-root`: `.copilot-toolkit/build/` or self-hosted `build/`. Keep consumer-owned paths and the caller cwd unchanged.
+
 1. **Resolve input** (Step 0 of the work skill):
-   - Compute `$toolkitRoot = if (Test-Path '.copilot-toolkit/.github') { '.copilot-toolkit/.github' } else { '.github' }`.
-   - Run `node .copilot-toolkit/scripts/parse-input.mjs "<input>"` (path assumes submodule / sync mount; if you self-host the toolkit by checking it out as the workspace root, drop the `.copilot-toolkit/` prefix).
+  - Compute `$toolkitRoot = if (Test-Path '.copilot-toolkit/build/.github') { '.copilot-toolkit/build/.github' } elseif (Test-Path 'build/.github') { 'build/.github' } else { throw 'Toolkit runtime not ready; run install/init.mjs --build in the toolkit source checkout.' }`.
+   - Run `node .copilot-toolkit/build/scripts/parse-input.mjs "<input>"` (path assumes submodule / sync mount; if you self-host the toolkit by checking it out as the workspace root, drop the `.copilot-toolkit/` prefix).
    - Read `.github/prompts/workflows/registry/index.md` to match the repo.
    - Read `.github/prompts/workflows/registry/<matched-repo>.md` for full metadata.
 2. **Invoke skill `work`** with: `toolkit-root: $toolkitRoot`, the resolved repo, registry metadata (`path`, `pr-platform`, `ado-repo-server`, `ado-wi-server`, build commands, anti-pattern allowlist), and the raw user input.

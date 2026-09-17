@@ -13,7 +13,7 @@ Your job is: read spec -> read code -> apply edits -> verify -> return summary.
 
 ## Input (from main agent)
 
-- `toolkit-root`: absolute / workspace-relative path the calling agent resolved (e.g. `.copilot-toolkit/.github` when consumed, `.github` when self-hosted). Every `{toolkit-root}` placeholder below MUST be replaced with this value before opening the referenced file.
+- `toolkit-root`: absolute / workspace-relative path the calling agent resolved (e.g. `.copilot-toolkit/build/.github` when consumed, `build/.github` when self-hosted). Every `{toolkit-root}` placeholder below MUST be replaced with this value before opening the referenced file.
 - `spec-path`: absolute path to `metrics/work/<item-id>/spec.md` (the frozen spec)
 - `repo-path`: workspace-relative path to the target repo (e.g. `repos/avd-portal`)
 - `registry-path`: path to the registry file for the target repo

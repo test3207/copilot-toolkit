@@ -46,7 +46,7 @@ Apply the `URL detection` regex; emit:
 The tested helper prefers the authenticated `gh` CLI and falls back to REST + `GITHUB_TOKEN` when `gh` is unavailable (for GHES pass `--host <host>`):
 
 ```text
-node .copilot-toolkit/scripts/github-rest.mjs get-repo --owner <owner> --repo <repoName> [--host <github.com or GHES host>]
+node .copilot-toolkit/build/scripts/github-rest.mjs get-repo --owner <owner> --repo <repoName> [--host <github.com or GHES host>]
 ```
 
 Return values used by the registry entry:

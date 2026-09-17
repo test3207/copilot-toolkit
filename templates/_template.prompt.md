@@ -33,7 +33,7 @@
 # Agents (subagents):
 #   Docs: https://code.visualstudio.com/docs/copilot/agents/subagents
 #   To use subagents, include 'agent' in tools list.
-#   Template: .copilot-toolkit/.github/agents/_template.md
+#   Template: .copilot-toolkit/build/.github/agents/_template.md
 #
 #   Restrict which agents can be used as subagents:
 #     agents: ['doc-checker', 'test-runner']   # specific agents only

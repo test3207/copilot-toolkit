@@ -55,7 +55,7 @@ Run the **parseRepoUrl** recipe. Produce the standard `repoInput` object (`host`
 Ask the user for the working branch (`develop`, `main`, or other) first, then run the deterministic git glue in one call (adds the submodule under `repos/<repoName>`, sets `ignore = all`, and pins the branch):
 
 ```text
-node .copilot-toolkit/scripts/add-submodule.mjs --name <repoInput.repoName> --clone-url <repoInput.cloneUrl> --branch <branch>
+node .copilot-toolkit/build/scripts/add-submodule.mjs --name <repoInput.repoName> --clone-url <repoInput.cloneUrl> --branch <branch>
 ```
 
 Prints `{ name, path, cloneUrl, branch }`.

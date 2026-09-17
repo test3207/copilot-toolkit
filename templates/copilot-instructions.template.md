@@ -49,9 +49,9 @@ or auth prompt = silent hang.
 - Always `git --no-pager <cmd>`. Never bare `git log` / `git diff` / `git show`.
 - Nested pwsh: pass `-NonInteractive -NoProfile` (Read-Host then throws instead of
   pending).
-- Wrap unknown-duration / external commands in `.copilot-toolkit/scripts/run-safe.mjs` (hard
+- Wrap unknown-duration / external commands in `.copilot-toolkit/build/scripts/run-safe.mjs` (hard
   timeout + closed stdin + pager defang).
-  - Usage: `node .copilot-toolkit/scripts/run-safe.mjs --command "<cmd>" --timeout-sec <n>`
+  - Usage: `node .copilot-toolkit/build/scripts/run-safe.mjs --command "<cmd>" --timeout-sec <n>`
   - Returns `124` on timeout (process killed).
   - The child shell is PowerShell 7 on Windows and `/bin/sh` on POSIX, so a command written
     in PowerShell syntax is not portable through this wrapper. On Windows it exits `2` if
@@ -65,7 +65,7 @@ or auth prompt = silent hang.
   expansion mangling the command, and Git-Bash leading-`/` path mangling / cross-shell
   quote breakage (`pwsh -File` vs `-Command` arg binding). Node is the one runtime every
   consumer has (preflight enforces it). Single commands (`git --no-pager ...`,
-  `node .copilot-toolkit/scripts/x.mjs ...`) stay inline.
+  `node .copilot-toolkit/build/scripts/<helper>.mjs ...`) stay inline.
 - Never `Start-Sleep` to wait for a previous command -- you get auto-notified when
   it completes.
 - For env-level git defang in long scripts:
@@ -79,21 +79,29 @@ The toolkit ships no companion anti-pattern list. IF you keep one in user memory
 This consumer pulls reusable skills, agents, and scripts from the upstream
 **copilot-toolkit**. Mount mode is one of:
 
-- **Submodule (preferred)**: toolkit sits at `.copilot-toolkit/`. Add to
-  `.vscode/settings.json`:
+- **Submodule (preferred)**: source sits at `.copilot-toolkit/`. Explicitly run
+  `node .copilot-toolkit/install/init.mjs --build` to build the selected checkout
+  and merge `.vscode/settings.json`; later source edits need an explicit rebuild.
+  Runtime discovery uses:
 
   ```jsonc
-  "chat.agentSkillsLocations": { ".copilot-toolkit/.github/skills":  true },
-  "chat.agentFilesLocations":  { ".copilot-toolkit/.github/agents":  true },
-  "chat.promptFilesLocations": { ".copilot-toolkit/.github/prompts": true }
+  "chat.agentSkillsLocations": { ".copilot-toolkit/build/.github/skills":  true },
+  "chat.agentFilesLocations":  { ".copilot-toolkit/build/.github/agents":  true },
+  "chat.promptFilesLocations": { ".copilot-toolkit/build/.github/prompts": true }
   ```
 
 - **Sync script**: `node .copilot-toolkit/install/sync.mjs --tag <tag>` stages the
   upstream tag and its SHA256 manifest before replacing `.copilot-toolkit/`.
   The manifest lives in `.copilot-toolkit/.sync-lock`. On re-sync it re-hashes
   every tracked file and refuses local edits; `--force` discards those edits,
-  but never bypasses ownership checks. For older-tag bootstraps and lifecycle
-  details, see `.copilot-toolkit/INSTALL.md`.
+  but never bypasses ownership checks. Acquisition does not imply readiness.
+  Historical source tags retain their setup; an already built package uses
+  `node .copilot-toolkit/install/init.mjs` without source or npm dependencies.
+
+Runtime helpers and templates live under `.copilot-toolkit/build/`. Registry,
+review settings, project instructions and workflow outputs stay in this consumer.
+Reload VS Code after successful init and verify built discovery. Do not change
+the caller cwd to the build directory or fall back to toolkit source paths.
 
 Whichever mode, **never edit toolkit-shipped files directly in this consumer**.
 File a PR upstream and re-pull. Consumer-only skills, agents, and prompts live
@@ -135,7 +143,7 @@ If your workflow needs to parse Incident Management URLs (oncall tooling), set:
 // repeat for linux/osx
 ```
 
-This wires `.copilot-toolkit/scripts/parse-input.mjs` (toolkit-shipped) to recognize your incident
+This wires `.copilot-toolkit/build/scripts/parse-input.mjs` (toolkit-shipped) to recognize your incident
 URLs without baking the host name into upstream source.
 
 ## Prompts
@@ -152,6 +160,6 @@ Example:
 | `/work`     | Daily dev with WI integration (skill: work) |
 }}
 
-**Before creating any prompt file**: Read `.copilot-toolkit/templates/_template.prompt.md` first.
+**Before creating any prompt file**: Read `.copilot-toolkit/build/templates/_template.prompt.md` first.
 
-**Before creating any agent file**: Read `.copilot-toolkit/.github/agents/_template.md` first.
+**Before creating any agent file**: Read `.copilot-toolkit/build/.github/agents/_template.md` first.

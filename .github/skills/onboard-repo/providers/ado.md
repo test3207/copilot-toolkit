@@ -65,7 +65,7 @@ Return values used by the registry entry:
 Fallback (REST when MCP unavailable) — the tested helper wraps the `az` token + REST call:
 
 ```text
-node .copilot-toolkit/scripts/ado-rest.mjs get-repo --org <org> --project <project> --repo-name <repoName>
+node .copilot-toolkit/build/scripts/ado-rest.mjs get-repo --org <org> --project <project> --repo-name <repoName>
 ```
 
 Prints `{ id, name, defaultBranch }` (`id` = the `repo-guid`). For sovereign clouds add `--resource-guid <ado-resource-guid>`.
@@ -76,7 +76,7 @@ ADO ownership = `System.AreaPath` on a representative work item.
 
 Two input modes:
 
-1. **User pastes a WI link**: extract WI id via `node .copilot-toolkit/scripts/parse-input.mjs "<link>"` (returns `{ type: "wi", id, org, project }`). Fetch the WI:
+1. **User pastes a WI link**: extract WI id via `node .copilot-toolkit/build/scripts/parse-input.mjs "<link>"` (returns `{ type: "wi", id, org, project }`). Fetch the WI:
 
    ```text
    {ado-wi-server}/wit_get_work_item  id=<wiId>

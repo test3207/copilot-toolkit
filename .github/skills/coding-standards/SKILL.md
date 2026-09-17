@@ -28,7 +28,7 @@ field listing bare filenames in load order. Example:
 | coding-standards | common.md, typescript.md |
 ```
 
-The requesting agent prepends `{toolkit-root}/skills/coding-standards/` (where `{toolkit-root}` is the path resolved by the entry prompt — `.copilot-toolkit/.github` when consumed via submodule, `.github` when self-hosted) to each entry. The
+The requesting agent prepends `{toolkit-root}/skills/coding-standards/` (where `{toolkit-root}` is the path resolved by the entry prompt — `.copilot-toolkit/build/.github` when consumed via submodule, `build/.github` when self-hosted) to each entry. The
 registry stays compact; the directory is a fixed convention.
 
 Repos that ship their own root-level standards (e.g. `CONTRIBUTING.md`) can set the

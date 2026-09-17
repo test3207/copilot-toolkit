@@ -367,7 +367,8 @@ function run(options) {
       }
     }
     console.log(`[sync] Sync complete: ${options.tag} @ ${result.shortCommit}, ${result.count} files.`);
-    console.log('[sync] Reload VS Code to pick up the toolkit. Consumer configuration was not changed.');
+    console.log('[sync] Acquisition only; runtime readiness was not checked. Consumer configuration was not changed.');
+    console.log('[sync] Built packages use install/init.mjs next. Source-only or historical tags require their documented setup; sync does not build or initialize them.');
   } finally {
     if (!retainedBackup) {
       try {

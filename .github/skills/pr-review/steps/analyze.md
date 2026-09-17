@@ -55,7 +55,7 @@ _Why unconditional_:
 ```text
 You are {agentName}. Analyze PR !{prId} for {role}.
 
-toolkit-root: {toolkit-root from main agent}                # workspace-relative path the skill's caller resolved (e.g. `.copilot-toolkit/.github` when consumed, `.github` when self-hosted). Substitute {toolkit-root} placeholders in your agent prompt with this value.
+toolkit-root: {toolkit-root from main agent}                # workspace-relative path the skill's caller resolved (e.g. `.copilot-toolkit/build/.github` when consumed, `build/.github` when self-hosted). Substitute {toolkit-root} placeholders in your agent prompt with this value.
 prId: {prId}
 repo: {repo}                                            # repo name/key (registry match, or derived repoName in derive mode). Output dir = pr-review/{repo}/{prId}/ so same-number PRs in different repos don't collide.
 fileLinkTemplate: {fileLinkTemplate from Step 5}        # Template with {path}/{startLine}/{endLine} placeholders. Substitute these per finding. Do NOT construct URLs yourself.
