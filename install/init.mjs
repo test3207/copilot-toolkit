@@ -13,12 +13,13 @@ const locations = {
 };
 
 export function prepareSettings(consumerRoot, mount) {
-  const { parseTree, findNodeAtLocation, modify, applyEdits } = createRequire(import.meta.url)('./vendor/jsonc-parser');
+  const { parseTree, findNodeAtLocation, modify, applyEdits, createScanner, SyntaxKind } = createRequire(import.meta.url)('./vendor/jsonc-parser');
   consumerRoot = fs.realpathSync.native(safePath(consumerRoot));
   mount = fs.realpathSync.native(safePath(mount));
   const target = safePath(consumerRoot, '.vscode/settings.json');
   const directoryExisted = fs.existsSync(path.dirname(target));
   const before = fs.existsSync(target) ? readBytes(consumerRoot, '.vscode/settings.json') : null;
+  const mode = before !== null && process.platform !== 'win32' ? fs.statSync(target).mode & 0o7777 : null;
   const original = before?.toString('utf8') ?? '{}\n';
   if (before && !Buffer.from(original).equals(before)) throw new Error('Settings must be valid UTF-8');
   const bom = original.startsWith('\uFEFF') ? '\uFEFF' : '';
@@ -37,7 +38,7 @@ export function prepareSettings(consumerRoot, mount) {
   }
   const rootProperties = properties(tree);
   const mountRelative = path.relative(consumerRoot, mount).split(path.sep).join('/');
-  if (mountRelative.startsWith('../') || path.isAbsolute(mountRelative)) throw new Error('Toolkit mount must be inside the consumer root');
+  if (mountRelative === '..' || mountRelative.startsWith('../') || path.isAbsolute(mountRelative)) throw new Error('Toolkit mount must be inside the consumer root');
   const selfHosted = mountRelative === '';
   const prefix = mountRelative ? `${mountRelative}/` : '';
   const indentation = /(?:^|\n)([\t ]+)"/.exec(text)?.[1] || '  ';
@@ -45,6 +46,35 @@ export function prepareSettings(consumerRoot, mount) {
     eol: text.includes('\r\n') ? '\r\n' : '\n' };
   function edit(location, value) {
     text = applyEdits(text, modify(text, location, value, { formattingOptions }));
+  }
+  function migrate(key, entry, built) {
+    const currentTree = parseTree(text);
+    const property = findNodeAtLocation(currentTree, [key, entry]).parent;
+    if (!findNodeAtLocation(currentTree, [key, built])) {
+      const token = property.children[0];
+      text = applyEdits(text, [{ offset: token.offset, length: token.length, content: JSON.stringify(built) }]);
+      return;
+    }
+    const scanner = createScanner(text, true);
+    const edits = [];
+    const end = property.offset + property.length;
+    scanner.setPosition(property.offset);
+    while (scanner.scan() !== SyntaxKind.EOF && scanner.getTokenOffset() < end) {
+      edits.push({ offset: scanner.getTokenOffset(), length: scanner.getTokenLength(), content: '' });
+    }
+    scanner.setPosition(end);
+    if (scanner.scan() !== SyntaxKind.CommaToken) {
+      const siblings = property.parent.children;
+      const previous = siblings[siblings.indexOf(property) - 1];
+      if (previous) {
+        scanner.setPosition(previous.offset + previous.length);
+        scanner.scan();
+      }
+    }
+    if (scanner.getToken() === SyntaxKind.CommaToken) {
+      edits.push({ offset: scanner.getTokenOffset(), length: scanner.getTokenLength(), content: '' });
+    }
+    text = applyEdits(text, edits);
   }
   for (const [key, directory] of Object.entries(locations)) {
     const node = rootProperties.get(key);
@@ -68,7 +98,7 @@ export function prepareSettings(consumerRoot, mount) {
     if (new Set(considered.map(entry => entry.value)).size > 1) throw new Error('Conflicting toolkit discovery entries; ownership is ambiguous');
     const enabled = considered[0]?.value ?? true;
     for (const entry of owned) {
-      if (entry.entry !== built && !(selfHosted && entry.entry === source)) edit([key, entry.entry], undefined);
+      if (entry.entry !== built && !(selfHosted && entry.entry === source)) migrate(key, entry.entry, built);
     }
     if (selfHosted) edit([key, source], false);
     const current = findNodeAtLocation(parseTree(text), [key, built]);
@@ -81,8 +111,13 @@ export function prepareSettings(consumerRoot, mount) {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     const scratch = fs.mkdtempSync(path.join(path.dirname(target), '.settings-'));
     try {
-      writeBytes(scratch, 'settings.json', bytes);
-      fs.renameSync(path.join(scratch, 'settings.json'), target);
+      const replacement = path.join(scratch, 'settings.json');
+      if (mode === null) writeBytes(scratch, 'settings.json', bytes);
+      else {
+        fs.writeFileSync(replacement, bytes, { flag: 'wx', mode });
+        fs.chmodSync(replacement, mode);
+      }
+      fs.renameSync(replacement, target);
     } finally {
       fs.rmSync(scratch, { recursive: true, force: true });
     }

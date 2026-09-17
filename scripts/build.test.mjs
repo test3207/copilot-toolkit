@@ -190,16 +190,81 @@ test('independent expected set and every raw byte match the complete isolated pa
   assert.equal(candidate.manifest.sourceCommit, git(['rev-parse', 'HEAD'], sourceRoot));
 });
 
-test('same HEAD dirty helper, template and rules inputs change identity while unrelated files stay out', async context => {
-  const { root } = sourceFixture(context);
+test('recipe gate instructions pair the built executable with explicit authoring inputs', () => {
+  const skill = fs.readFileSync(path.join(sourceRoot, '.github/skills/tool-dev/SKILL.md'), 'utf8');
+  assert.ok(skill.includes('node .copilot-toolkit/build/scripts/lint-recipes.mjs .copilot-toolkit/.github'));
+  assert.ok(skill.includes('node build/scripts/lint-recipes.mjs .github'));
+  assert.ok(skill.includes('node .copilot-toolkit/build/scripts/lint-recipes.mjs .github'));
+  assert.match(skill, /actual repo.*being edited/);
+  assert.match(skill, /do not rebuild/i);
+});
+
+test('built recipe gate detects source-only violations in mounted and self-hosted source', async context => {
+  const { root, consumerRoot } = sourceFixture(context);
+  await build({ sourceRoot: root });
+  const runtime = path.join(root, 'build');
+  const cached = new Map(fileSet(runtime).map(relative => [relative, fs.readFileSync(path.join(runtime, relative))]));
+  const executable = path.join(runtime, 'scripts/lint-recipes.mjs');
+  fs.appendFileSync(path.join(root, '.github/skills/tool-dev/SKILL.md'), '\n```pwsh\nWrite-Output first\nWrite-Output second\n```\n');
+  for (const [cwd, subject] of [[consumerRoot, '.copilot-toolkit/.github'], [root, '.github']]) {
+    const cachedOnly = execute(process.execPath, [executable], cwd);
+    assert.equal(cachedOnly.status, 0, cachedOnly.stdout + cachedOnly.stderr);
+    const actualSource = execute(process.execPath, [executable, subject], cwd);
+    assert.equal(actualSource.status, 1, actualSource.stdout + actualSource.stderr);
+    assert.match(actualSource.stdout, /tool-dev[/\\]SKILL\.md/);
+    assert.match(actualSource.stdout, /multi-step inline shell \(2 statements\)/);
+  }
+  assert.deepEqual(fileSet(runtime), [...cached.keys()]);
+  for (const [relative, bytes] of cached) assert.deepEqual(fs.readFileSync(path.join(runtime, relative)), bytes, relative);
+  validatePackage(root);
+});
+
+test('minimal consumer gates its own source with the packaged recipe helper', async context => {
+  const consumerRoot = temporaryDirectory(context);
+  const candidate = await stageBuild({ sourceRoot, stagingParent: consumerRoot });
+  const mount = path.join(consumerRoot, '.copilot-toolkit');
+  fs.renameSync(candidate.root, mount);
+  const before = validatePackage(mount);
+  const executable = path.join(mount, 'build/scripts/lint-recipes.mjs');
+  const recipe = '.github/prompts/consumer.prompt.md';
+  write(consumerRoot, recipe, '# Consumer recipe\n\n```bash\nprintf first\nprintf second\n```\n');
+  for (const absent of ['.github', 'scripts', '.git', 'node_modules']) assert.equal(fs.existsSync(path.join(mount, absent)), false);
+  assert.equal(execute(process.execPath, [executable], consumerRoot).status, 0);
+  for (const subject of ['.github', path.join(consumerRoot, recipe)]) {
+    const result = execute(process.execPath, [executable, subject], consumerRoot);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /consumer\.prompt\.md/);
+    assert.match(result.stdout, /multi-step inline shell \(2 statements\)/);
+  }
+  assert.deepEqual(validatePackage(mount), before);
+});
+
+test('clean provenance ignores unrelated-only edits and tracks declared dirty inputs at the same HEAD', async context => {
+  const consumerRoot = temporaryDirectory(context);
+  const root = path.join(consumerRoot, '.copilot-toolkit');
+  git(['init', '--quiet', root], consumerRoot);
+  git(['config', '--local', 'core.autocrlf', 'false'], root);
+  for (const [relative, bytes] of snapshotInputs(sourceRoot)) write(root, relative, bytes);
+  write(root, 'unrelated.txt', 'baseline\n');
+  git(['add', '--all'], root);
+  git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false',
+    '-c', `core.hooksPath=${path.join(consumerRoot, 'no-hooks')}`, 'commit', '--quiet', '-m', 'Fixture baseline'], root);
+  assert.equal(git(['status', '--porcelain', '--untracked-files=all'], root), '');
   const first = await stageBuild({ sourceRoot: root, stagingParent: root });
   const revision = git(['rev-parse', 'HEAD'], root);
-  for (const relative of ['scripts/parse-input.mjs', 'templates/_template.prompt.md', '.github/skills/pr-review/rules.md']) {
-    write(root, relative, Buffer.concat([Buffer.from('\uFEFF'), fs.readFileSync(path.join(root, relative)), Buffer.from('\r\n')]));
-  }
+  assert.equal(first.manifest.dirty, false);
+  assert.equal(first.manifest.sourceCommit, revision);
+  write(root, 'unrelated.txt', 'unrelated tracked change\n');
   write(root, '.github/pr-review.local/config.json', '{"private":true}');
   write(root, '.github/copilot-instructions.md', 'private instructions');
   write(root, '.github/prompts/private.prompt.md', 'not declared');
+  const unrelated = await stageBuild({ sourceRoot: root, stagingParent: root });
+  assert.equal(unrelated.manifest.dirty, false);
+  assert.deepEqual(unrelated.manifest, first.manifest);
+  assert.equal(git(['rev-parse', 'HEAD'], root), revision);
+  for (const relative of ['scripts/parse-input.mjs', 'templates/_template.prompt.md', '.github/skills/pr-review/rules.md']) {
+    write(root, relative, Buffer.concat([Buffer.from('\uFEFF'), fs.readFileSync(path.join(root, relative)), Buffer.from('\r\n')]));
+  }
   const second = await stageBuild({ sourceRoot: root, stagingParent: root });
   assert.equal(second.manifest.sourceCommit, revision);
   assert.equal(second.manifest.dirty, true);
@@ -210,6 +275,7 @@ test('same HEAD dirty helper, template and rules inputs change identity while un
     fs.readFileSync(path.join(root, 'templates/_template.prompt.md')));
   const stable = await stageBuild({ sourceRoot: root, stagingParent: root });
   assert.deepEqual(stable.manifest, second.manifest);
+  assert.equal(git(['rev-parse', 'HEAD'], root), revision);
 });
 
 test('failed B after dirty helper and rules preserves executable independent runtime A and settings', async context => {

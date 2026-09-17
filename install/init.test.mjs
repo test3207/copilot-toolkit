@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import jsonc from './vendor/jsonc-parser/lib/umd/main.js';
 import { stageBuild } from '../scripts/build.mjs';
 import { initialize, prepareSettings, diagnostics } from './init.mjs';
 import { validatePackage, activateRuntime } from './runtime.mjs';
@@ -80,6 +81,69 @@ test('JSONC preserves BOM, CRLF, comments, unknown keys and disabled toolkit ent
   assert.equal(fs.readFileSync(settings, 'utf8'), text);
 });
 
+test('JSONC preserves the adjacent consumer comment with and without legacy migration', async context => {
+  const options = await fixture(context);
+  fs.mkdirSync(path.join(options.consumerRoot, '.vscode'));
+  const settings = path.join(options.consumerRoot, '.vscode/settings.json');
+  for (const discovery of ['.copilot-toolkit/build/.github/skills', '.copilot-toolkit/.github/skills']) {
+    const original = '{\r\n  "chat.agentSkillsLocations": {\r\n' +
+      `    "${discovery}": false,\r\n` +
+      '    // consumer discovery must survive\r\n    "custom": true,\r\n  },\r\n' +
+      '  "chat.agentFilesLocations": {".copilot-toolkit/build/.github/agents": true},\r\n' +
+      '  "chat.promptFilesLocations": {".copilot-toolkit/build/.github/prompts": true}\r\n}\r\n';
+    fs.writeFileSync(settings, original);
+    const prepared = prepareSettings(options.consumerRoot, options.mount);
+    assert.equal(prepared.after.toString(), original.replace(discovery, '.copilot-toolkit/build/.github/skills'));
+    prepared.write();
+    assert.deepEqual(prepareSettings(options.consumerRoot, options.mount).after, prepared.after);
+  }
+});
+
+test('JSONC duplicate migration preserves comment tokens and first, middle, last separators', async context => {
+  const options = await fixture(context);
+  fs.mkdirSync(path.join(options.consumerRoot, '.vscode'));
+  const settings = path.join(options.consumerRoot, '.vscode/settings.json');
+  function comments(text) {
+    const scanner = jsonc.createScanner(text);
+    const result = [];
+    for (let token = scanner.scan(); token !== jsonc.SyntaxKind.EOF; token = scanner.scan()) {
+      if ([jsonc.SyntaxKind.LineCommentTrivia, jsonc.SyntaxKind.BlockCommentTrivia].includes(token)) {
+        result.push(text.slice(scanner.getTokenOffset(), scanner.getTokenOffset() + scanner.getTokenLength()));
+      }
+    }
+    return result;
+  }
+  for (const position of [0, 1, 2]) {
+    for (const trailing of ['', ',']) {
+      for (const enabled of [true, false]) {
+        for (const existing of ['.copilot-toolkit/build/.github/skills', './.copilot-toolkit/.github/skills']) {
+          const entries = [`    "${existing}": ${enabled}`, '    // custom leading\n    "custom": {"unchanged": true}'];
+          entries.splice(position, 0, `    // legacy leading\n    ".copilot-toolkit/.github/skills" /* key */ : /* value */ ${enabled} /* tail */`);
+          const original = '\uFEFF{\n  "chat.agentSkillsLocations": {\n' + entries.join(',\n') + trailing + '\n    // closing\n  },\n' +
+            '  "chat.agentFilesLocations": {".copilot-toolkit/build/.github/agents": true},\n' +
+            '  "chat.promptFilesLocations": {".copilot-toolkit/build/.github/prompts": true}\n}\n';
+          const input = enabled ? original : original.replaceAll('\n', '\r\n');
+          fs.writeFileSync(settings, input);
+          const prepared = prepareSettings(options.consumerRoot, options.mount);
+          const output = prepared.after.toString();
+          const errors = [];
+          const parsed = jsonc.parse(output.slice(1), errors, { allowTrailingComma: true });
+          assert.deepEqual(errors, [], `position=${position}, trailing=${trailing}, existing=${existing}`);
+          assert.deepEqual(parsed['chat.agentSkillsLocations'], {
+            '.copilot-toolkit/build/.github/skills': enabled, custom: { unchanged: true },
+          });
+          assert.equal(output[0], '\uFEFF');
+          assert.deepEqual(comments(output), comments(input));
+          assert.ok(output.includes('"custom": {"unchanged": true}'));
+          if (!enabled) assert.doesNotMatch(output, /(?<!\r)\n/);
+          prepared.write();
+          assert.deepEqual(prepareSettings(options.consumerRoot, options.mount).after, prepared.after);
+        }
+      }
+    }
+  }
+});
+
 test('malformed or ambiguous settings do not change the active package', async context => {
   const options = await fixture(context);
   fs.mkdirSync(path.join(options.consumerRoot, '.vscode'));
@@ -100,6 +164,25 @@ test('self-hosting disables source discovery without disabling the built runtime
   assert.equal(value['chat.agentSkillsLocations']['.github/skills'], false);
   assert.equal(value['chat.agentSkillsLocations']['build/.github/skills'], true);
   assert.deepEqual(prepareSettings(options.mount, options.mount).after, prepared.after);
+});
+
+test('a consumer directly inside the toolkit mount is rejected without any writes', async context => {
+  const options = await fixture(context);
+  const consumerRoot = path.join(options.mount, 'install');
+  const before = fs.readdirSync(options.mount, { recursive: true }).sort();
+  assert.throws(() => prepareSettings(consumerRoot, options.mount), /Toolkit mount must be inside the consumer root/);
+  await assert.rejects(initialize({ ...options, consumerRoot }), /Toolkit mount must be inside the consumer root/);
+  assert.equal(fs.existsSync(path.join(consumerRoot, '.vscode')), false);
+  assert.deepEqual(fs.readdirSync(options.mount, { recursive: true }).sort(), before);
+});
+
+test('a nested toolkit mount remains supported', async context => {
+  const options = await fixture(context);
+  fs.mkdirSync(path.join(options.consumerRoot, 'nested'));
+  const mount = path.join(options.consumerRoot, 'nested/toolkit');
+  fs.renameSync(options.mount, mount);
+  const prepared = prepareSettings(options.consumerRoot, mount);
+  assert.equal(JSON.parse(prepared.after)['chat.agentSkillsLocations']['nested/toolkit/build/.github/skills'], true);
 });
 
 test('actual packaged CLI initializes from a different cwd without source, checkout or external dependencies', async context => {
@@ -165,6 +248,45 @@ test('a settings failure after replacement restores original bytes and package',
   assert.deepEqual(fs.readFileSync(target), original);
   validatePackage(options.mount);
 });
+
+for (const rollback of [false, true]) {
+  test(`POSIX settings mode stays private during ${rollback ? 'post-write rollback' : 'successful replacement'}`, {
+    skip: process.platform === 'win32' ? 'POSIX permission modes unavailable on Windows' : false,
+  }, async context => {
+    const options = await fixture(context);
+    fs.mkdirSync(path.join(options.consumerRoot, '.vscode'));
+    const target = path.join(options.consumerRoot, '.vscode/settings.json');
+    const original = Buffer.from('{"unrelated": true}\n');
+    fs.writeFileSync(target, original, { mode: 0o600 });
+    fs.chmodSync(target, 0o600);
+    if ((fs.statSync(target).mode & 0o777) !== 0o600) {
+      context.skip('Filesystem does not support POSIX permission modes');
+      return;
+    }
+    const previousUmask = process.umask(0o022);
+    try {
+      const publishedModes = [];
+      const rename = fs.renameSync;
+      context.mock.method(fs, 'renameSync', (from, to) => {
+        if (to === target) publishedModes.push(fs.statSync(from).mode & 0o777);
+        return rename(from, to);
+      });
+      const prepared = prepareSettings(options.consumerRoot, options.mount);
+      if (rollback) {
+        const settings = { ...prepared, write() { prepared.write(); throw new Error('Failure after replacement'); } };
+        assert.throws(() => activateRuntime({ mount: options.mount, settings }), /Activation failed/);
+        assert.deepEqual(fs.readFileSync(target), original);
+      } else {
+        prepared.write();
+        assert.deepEqual(fs.readFileSync(target), prepared.after);
+      }
+      assert.deepEqual(publishedModes, rollback ? [0o600, 0o600] : [0o600]);
+      assert.equal(fs.statSync(target).mode & 0o777, 0o600);
+    } finally {
+      process.umask(previousUmask);
+    }
+  });
+}
 
 test('settings hardlinks and ancestor links are refused before writes', async context => {
   const options = await fixture(context);
