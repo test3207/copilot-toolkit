@@ -163,6 +163,66 @@ function fileSet(root, relative = '') {
   }).sort();
 }
 
+test('source init --build rejects vendor shadows before fresh-process parser loading or staging', async context => {
+  const { root, consumerRoot } = sourceFixture(context);
+  const cli = path.join(root, 'install/init.mjs');
+  const marker = path.join(consumerRoot, 'parser-marker');
+  write(consumerRoot, '.vscode/settings.json', '{"unchanged" : [1,  2]}\n');
+  for (const active of [false, true]) {
+    if (active) await build({ sourceRoot: root });
+    const before = active ? fs.readFileSync(path.join(root, 'build/provenance.json')) : null;
+    for (const shadow of ['install/vendor/jsonc-parser.js', 'install/vendor/jsonc-parser/lib/umd/impl/parser']) {
+      const genuine = shadow.endsWith('.js') ? './jsonc-parser/lib/umd/main.js' : './parser.js';
+      write(root, shadow, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed'); module.exports = require('${genuine}');\n`);
+      const inventory = fs.readdirSync(root).sort();
+      const inputs = snapshotInputs(root);
+      const result = execute(process.execPath, [cli, '--build', '--consumer-root', consumerRoot], consumerRoot);
+      assert.equal(fs.existsSync(marker), false, result.stderr);
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, /Unexpected vendor/);
+      assert.match(result.stderr, new RegExp(`Previous runtime available: ${active}\\.`));
+      assert.equal(fs.readFileSync(path.join(consumerRoot, '.vscode/settings.json'), 'utf8'), '{"unchanged" : [1,  2]}\n');
+      assert.deepEqual(fs.readdirSync(root).sort(), inventory);
+      assert.deepEqual(snapshotInputs(root), inputs);
+      if (before) assert.deepEqual(fs.readFileSync(path.join(root, 'build/provenance.json')), before);
+      else assert.equal(fs.existsSync(path.join(root, 'build')), false);
+      fs.rmSync(path.join(root, shadow));
+      if (active) validatePackage(root);
+    }
+  }
+});
+
+test('source init --build accepts clean and declared dirty vendor bytes with unchanged authoring files', async context => {
+  const { root, consumerRoot } = cleanSourceFixture(context, '.copilot-toolkit');
+  const revision = git(['rev-parse', 'HEAD'], root);
+  const property = '"unrelated" : { "keep" : [1,  2] }';
+  write(consumerRoot, '.vscode/settings.json', `{${property}}\n`);
+  write(root, 'install/authoring/notes.txt', 'outside the owned vendor boundary\n');
+  let settings;
+  let previousIdentity;
+  for (const dirty of [false, true]) {
+    if (dirty) {
+      fs.appendFileSync(path.join(root, 'install/vendor/jsonc-parser/README.md'), '\n');
+      fs.appendFileSync(path.join(root, 'install/init.mjs'), '\n');
+    }
+    const inputs = snapshotInputs(root);
+    const result = execute(process.execPath, [path.join(root, 'install/init.mjs'), '--build', '--consumer-root', consumerRoot], consumerRoot);
+    assert.equal(result.status, 0, result.stderr);
+    const manifest = validatePackage(root);
+    assert.equal(manifest.dirty, dirty);
+    assert.equal(manifest.sourceCommit, revision);
+    assert.equal(git(['rev-parse', 'HEAD'], root), revision);
+    assert.deepEqual(snapshotInputs(root), inputs);
+    if (previousIdentity) assert.notEqual(manifest.inputsHash, previousIdentity);
+    previousIdentity = manifest.inputsHash;
+    const after = fs.readFileSync(path.join(consumerRoot, '.vscode/settings.json'));
+    assert.ok(after.toString().includes(property));
+    if (settings) assert.deepEqual(after, settings);
+    settings = after;
+    assert.equal(fs.readFileSync(path.join(root, 'install/authoring/notes.txt'), 'utf8'), 'outside the owned vendor boundary\n');
+  }
+});
+
 test('minimal runtime rejects source fallback and executes without authoring files', async context => {
   const { stageBuild } = await import('./build.mjs');
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'toolkit-build-'));

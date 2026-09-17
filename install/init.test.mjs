@@ -3,12 +3,12 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 import jsonc from './vendor/jsonc-parser/lib/umd/main.js';
 import { stageBuild } from '../scripts/build.mjs';
 import { initialize, prepareSettings, diagnostics } from './init.mjs';
-import { validatePackage, validateActiveRuntime, activateRuntime, hash, identity } from './runtime.mjs';
+import { validatePackage, validateActiveRuntime, validateVendor, activateRuntime, hash, identity } from './runtime.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
 const diagnose = () => ({ tools: [], warnings: [] });
@@ -109,6 +109,50 @@ test('minimal consumer initializes without source or npm and is byte-idempotent'
   assert.deepEqual(fs.readFileSync(settings), before);
   assert.equal(fs.existsSync(path.join(options.mount, 'scripts')), false);
   assert.equal(fs.existsSync(path.join(options.mount, 'node_modules')), false);
+});
+
+test('JSONC missing maps preserve compact property bytes', async context => {
+  const options = await fixture(context);
+  fs.mkdirSync(path.join(options.consumerRoot, '.vscode'));
+  const settings = path.join(options.consumerRoot, '.vscode/settings.json');
+  const maps = ['chat.agentSkillsLocations', 'chat.agentFilesLocations', 'chat.promptFilesLocations'];
+  const directories = ['skills', 'agents', 'prompts'];
+  for (const value of ['{ "compact": [1,  2], "enabled" : false }', '[1,  { "keep" : true }]', 'false']) {
+    for (const count of [0, 1, 3]) {
+      for (const multiline of [false, true]) {
+        const property = `"unrelated" : ${value}`;
+        const entries = maps.slice(0, count).map((key, index) =>
+          `"${key}" : { ".copilot-toolkit/.github/${directories[index]}" : false, "custom" : false }`);
+        entries.push(property);
+        const original = multiline ? `\uFEFF{\r\n\t// keep\r\n\t${entries.join(',\r\n\t')},\r\n}\r\n` : `{${entries.join(',')}}`;
+        fs.writeFileSync(settings, original);
+        const prepared = prepareSettings(options.consumerRoot, options.mount);
+        const output = prepared.after.toString();
+        assert.ok(output.includes(property), output);
+        const errors = [];
+        const parsed = jsonc.parse(output.replace(/^\uFEFF/, ''), errors, { allowTrailingComma: true });
+        assert.deepEqual(errors, []);
+        for (const [index, key] of maps.entries()) {
+          assert.equal(parsed[key][`.copilot-toolkit/build/.github/${directories[index]}`], index >= count);
+          if (index < count) assert.ok(output.includes('"custom" : false'));
+        }
+        if (multiline) {
+          assert.ok(output.startsWith('\uFEFF{\r\n\t// keep\r\n\t'));
+          assert.doesNotMatch(output, /(?<!\r)\n/);
+        }
+        prepared.write();
+        assert.deepEqual(prepareSettings(options.consumerRoot, options.mount).after, prepared.after);
+      }
+    }
+  }
+  fs.mkdirSync(path.join(options.mount, '.vscode'));
+  const original = '{"chat.agentSkillsLocations" : { ".github/skills" : true, "custom" : [1,  2] }}';
+  fs.writeFileSync(path.join(options.mount, '.vscode/settings.json'), original);
+  const prepared = prepareSettings(options.mount, options.mount);
+  assert.ok(prepared.after.toString().includes('".github/skills" : false, "custom" : [1,  2]'));
+  assert.equal(jsonc.parse(prepared.after.toString())['chat.agentSkillsLocations']['build/.github/skills'], true);
+  prepared.write();
+  assert.deepEqual(prepareSettings(options.mount, options.mount).after, prepared.after);
 });
 
 test('JSONC preserves BOM, CRLF, comments, unknown keys and disabled toolkit entries', async context => {
@@ -337,6 +381,125 @@ test('package tampering and usage errors fail without wiring settings', async co
   assert.equal(fs.existsSync(path.join(options.consumerRoot, '.vscode/settings.json')), false);
 });
 
+for (const shadow of ['install/vendor/jsonc-parser.js', 'install/vendor/jsonc-parser/lib/umd/impl/parser']) {
+  test(`owned vendor rejects executable shadow ${shadow} before packaged CLI loads parser`, async context => {
+    const options = await fixture(context);
+    const marker = path.join(options.consumerRoot, 'parser-marker');
+    const genuine = shadow.endsWith('.js') ? './jsonc-parser/lib/umd/main.js' : './parser.js';
+    const before = validatePackage(options.mount);
+    fs.writeFileSync(path.join(options.mount, shadow),
+      `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed'); module.exports = require('${genuine}');\n`);
+    const result = spawnSync(process.execPath, [path.join(options.mount, 'install/init.mjs')], {
+      cwd: options.consumerRoot, timeout: 10000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, PATH: '' },
+    });
+    assert.equal(fs.existsSync(marker), false, result.stderr);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /Unexpected vendor/);
+    assert.equal(fs.existsSync(path.join(options.consumerRoot, '.vscode')), false);
+    assert.throws(() => validatePackage(options.mount), /Unexpected vendor/);
+    assert.deepEqual(validateActiveRuntime(options.mount), before);
+    for (const entry of before.payload) assert.equal(hash(fs.readFileSync(path.join(options.mount, entry.path))), entry.sha256);
+  });
+}
+
+test('owned vendor preload checks the actual prepareSettings module instead of its mount argument', async context => {
+  const options = await fixture(context);
+  const other = await fixture(context);
+  const marker = path.join(options.consumerRoot, 'parser-marker');
+  const shadow = path.join(options.mount, 'install/vendor/jsonc-parser/lib/umd/impl/parser');
+  fs.writeFileSync(shadow, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed'); module.exports = require('./parser.js');\n`);
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval',
+    `const { prepareSettings } = await import(${JSON.stringify(pathToFileURL(path.join(options.mount, 'install/init.mjs')).href)}); prepareSettings(${JSON.stringify(other.consumerRoot)}, ${JSON.stringify(other.mount)});`], {
+    cwd: options.consumerRoot, timeout: 10000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, PATH: '' },
+  });
+  assert.equal(fs.existsSync(marker), false, result.stderr);
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /Unexpected vendor/);
+  assert.equal(fs.existsSync(path.join(other.consumerRoot, '.vscode')), false);
+  assert.ok(prepareSettings(options.consumerRoot, options.mount).after.length > 0);
+  await assert.rejects(initialize(options), /Unexpected vendor/);
+});
+
+test('owned vendor closes files, intermediate directories and links without whitelisting other source', async context => {
+  const options = await fixture(context);
+  const vendor = path.join(options.mount, 'install/vendor');
+  const before = validatePackage(options.mount);
+  fs.writeFileSync(path.join(options.mount, 'install/authoring.txt'), 'unrelated authoring bytes');
+  assert.deepEqual(validatePackage(options.mount), before);
+  const cases = [
+    ['file', 'package.json'], ['file', 'jsonc-parser/lib/umd/package.json'],
+    ['file', 'jsonc-parser/lib/umd/main'], ['directory', 'unused'],
+    ['directory', 'jsonc-parser/lib/umd/impl/parser'],
+    ['missing', 'jsonc-parser/lib/umd/main.js'], ['directory', 'jsonc-parser/lib/umd/main.js'],
+    ['hardlink', 'jsonc-parser/lib/umd/impl/parser.js'],
+    ...['', 'jsonc-parser', 'jsonc-parser/lib', 'jsonc-parser/lib/umd', 'jsonc-parser/lib/umd/impl']
+      .flatMap(relative => [['link', relative], ['file', relative]]),
+  ];
+  for (const [index, [kind, relative]] of cases.entries()) {
+    fs.rmSync(vendor, { recursive: true, force: true });
+    fs.cpSync(path.join(sourceRoot, 'install/vendor'), vendor, { recursive: true });
+    const target = path.join(vendor, relative);
+    if (fs.existsSync(target)) fs.rmSync(target, { recursive: true });
+    if (kind === 'file') fs.writeFileSync(target, '{}');
+    if (kind === 'directory') fs.mkdirSync(target);
+    if (kind === 'link' || kind === 'hardlink') {
+      const outside = path.join(options.consumerRoot, `vendor-target-${index}`);
+      if (kind === 'link') {
+        fs.mkdirSync(outside);
+        fs.symlinkSync(outside, target, process.platform === 'win32' ? 'junction' : 'dir');
+      } else {
+        fs.writeFileSync(outside, fs.readFileSync(path.join(sourceRoot, 'install/vendor', relative)));
+        fs.linkSync(outside, target);
+      }
+    }
+    assert.throws(() => validateVendor(options.mount), `${kind}: ${relative}`);
+    assert.throws(() => validatePackage(options.mount), `${kind}: ${relative}`);
+    assert.deepEqual(validateActiveRuntime(options.mount), before);
+    const result = spawnSync(process.execPath, [path.join(options.mount, 'install/init.mjs')], {
+      cwd: options.consumerRoot, timeout: 10000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, PATH: '' },
+    });
+    assert.equal(result.status, 1, `${kind}: ${relative}: ${result.stderr}`);
+    assert.equal(fs.existsSync(path.join(options.consumerRoot, '.vscode')), false);
+  }
+  assert.equal(fs.readFileSync(path.join(options.mount, 'install/authoring.txt'), 'utf8'), 'unrelated authoring bytes');
+});
+
+test('owned vendor rejects native POSIX special file nodes before reading', {
+  skip: process.platform === 'win32' ? 'Native POSIX FIFO creation unavailable on Windows' : false,
+}, async context => {
+  const options = await fixture(context);
+  for (const relative of ['install/vendor/jsonc-parser/lib/umd/main.js', 'install/vendor/jsonc-parser/lib/umd/impl']) {
+    const target = path.join(options.mount, relative);
+    fs.rmSync(target, { recursive: true });
+    const result = spawnSync('mkfifo', [target], { timeout: 5000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    assert.equal(result.status, 0, result.stderr);
+    assert.throws(() => validateVendor(options.mount), /Non-regular|Non-directory/);
+    fs.rmSync(target);
+    fs.cpSync(path.join(sourceRoot, relative), target, { recursive: true });
+  }
+});
+
+test('ordinary init still rejects modified declared vendor bytes before execution', async context => {
+  const options = await fixture(context);
+  const marker = path.join(options.consumerRoot, 'parser-marker');
+  const before = validateActiveRuntime(options.mount);
+  fs.appendFileSync(path.join(options.mount, 'install/vendor/jsonc-parser/lib/umd/main.js'),
+    `\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed');\n`);
+  validateVendor(options.mount);
+  const result = spawnSync(process.execPath, [path.join(options.mount, 'install/init.mjs')], {
+    cwd: options.consumerRoot, timeout: 10000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, PATH: '' },
+  });
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /Altered package file/);
+  assert.equal(fs.existsSync(marker), false);
+  assert.equal(fs.existsSync(path.join(options.consumerRoot, '.vscode')), false);
+  assert.deepEqual(validateActiveRuntime(options.mount), before);
+});
+
 test('missing vendored dependency fails explicitly before parser execution or discovery writes', async context => {
   const options = await fixture(context);
   fs.rmSync(path.join(options.mount, 'install/vendor/jsonc-parser/lib/umd/main.js'));
@@ -399,6 +562,61 @@ for (const rollback of [false, true]) {
     }
   });
 }
+
+test('linked consumer rejection reports assessed previous runtime availability', async context => {
+  const options = await fixture(context);
+  const linked = path.join(options.consumerRoot, 'linked-consumer');
+  fs.symlinkSync(options.consumerRoot, linked, process.platform === 'win32' ? 'junction' : 'dir');
+  fs.mkdirSync(path.join(options.consumerRoot, '.vscode'));
+  const settings = path.join(options.consumerRoot, '.vscode/settings.json');
+  fs.writeFileSync(settings, '{"unchanged": true}\n');
+  for (const state of ['valid', 'invalid', 'absent']) {
+    const helper = path.join(options.mount, 'build/scripts/parse-input.mjs');
+    if (state === 'invalid') fs.appendFileSync(helper, '\n');
+    if (state === 'absent') fs.rmSync(path.join(options.mount, 'build'), { recursive: true });
+    const before = state === 'absent' ? null : fs.readFileSync(helper);
+    const result = spawnSync(process.execPath, [path.join(options.mount, 'install/init.mjs'), '--consumer-root', linked], {
+      cwd: options.consumerRoot, timeout: 10000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, PATH: '' },
+    });
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, new RegExp(`Previous runtime available: ${state === 'valid'}\\. .*Linked`));
+    await assert.rejects(initialize({ ...options, consumerRoot: linked }), error => {
+      assert.match(error.message, /Linked/);
+      assert.equal(error.previousRuntimeAvailable, state === 'valid');
+      return true;
+    });
+    assert.equal(fs.readFileSync(settings, 'utf8'), '{"unchanged": true}\n');
+    if (before) assert.deepEqual(fs.readFileSync(helper), before);
+    else assert.equal(fs.existsSync(path.join(options.mount, 'build')), false);
+  }
+});
+
+test('linked mount stays unassessed without runtime probing and CLI reports unknown', async context => {
+  const options = await fixture(context);
+  const linked = path.join(options.consumerRoot, 'linked-mount');
+  fs.symlinkSync(options.mount, linked, process.platform === 'win32' ? 'junction' : 'dir');
+  const result = spawnSync(process.execPath, ['--preserve-symlinks-main', path.join(linked, 'install/init.mjs'),
+    '--consumer-root', options.consumerRoot], {
+    cwd: options.consumerRoot, timeout: 10000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, PATH: '' },
+  });
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /Previous runtime available: unknown\. .*Linked/);
+  const reads = context.mock.method(fs, 'readFileSync', () => { throw new Error('Unsafe mount was read'); });
+  const listings = context.mock.method(fs, 'readdirSync', () => { throw new Error('Unsafe mount was listed'); });
+  await assert.rejects(initialize({ ...options, mount: linked }), error => {
+    assert.match(error.message, /Linked/);
+    assert.equal(error.previousRuntimeAvailable, undefined);
+    return true;
+  });
+  assert.equal(reads.mock.callCount(), 0);
+  assert.equal(listings.mock.callCount(), 0);
+  reads.mock.restore();
+  listings.mock.restore();
+  validatePackage(options.mount);
+  assert.equal(fs.existsSync(path.join(options.consumerRoot, '.vscode')), false);
+});
 
 test('settings hardlinks and ancestor links are refused before writes', async context => {
   const options = await fixture(context);

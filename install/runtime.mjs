@@ -121,7 +121,30 @@ function validate(root, completePackage) {
   return manifest;
 }
 
+export function validateVendor(root) {
+  const files = new Set(bootstrapFiles.filter(file => file.startsWith('install/vendor/')));
+  const directories = new Set(['install/vendor']);
+  for (const file of files) {
+    for (let directory = path.posix.dirname(file); directory.startsWith('install/vendor/'); directory = path.posix.dirname(directory)) {
+      directories.add(directory);
+    }
+  }
+  function visit(relative) {
+    const target = safePath(root, relative);
+    if (!fs.lstatSync(target).isDirectory()) throw new Error(`Non-directory vendor path: ${relative}`);
+    for (const name of fs.readdirSync(target)) {
+      const child = `${relative}/${name}`;
+      if (directories.has(child)) visit(child);
+      else if (files.delete(child)) readBytes(root, child);
+      else throw new Error(`Unexpected vendor path: ${child}`);
+    }
+  }
+  visit('install/vendor');
+  if (files.size) throw new Error('Incomplete vendor files');
+}
+
 export function validatePackage(root) {
+  validateVendor(root);
   return validate(root, true);
 }
 

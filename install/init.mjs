@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { activateRuntime, validatePackage, validateActiveRuntime, safePath, readBytes, writeBytes } from './runtime.mjs';
+import { activateRuntime, validatePackage, validateActiveRuntime, validateVendor, safePath, readBytes, writeBytes } from './runtime.mjs';
 
 export const toolkitMount = fileURLToPath(new URL('../', import.meta.url));
 const locations = {
@@ -13,6 +13,7 @@ const locations = {
 };
 
 export function prepareSettings(consumerRoot, mount) {
+  validateVendor(toolkitMount);
   const { parseTree, findNodeAtLocation, modify, applyEdits, createScanner, SyntaxKind } = createRequire(import.meta.url)('./vendor/jsonc-parser');
   consumerRoot = fs.realpathSync.native(safePath(consumerRoot));
   mount = fs.realpathSync.native(safePath(mount));
@@ -43,11 +44,8 @@ export function prepareSettings(consumerRoot, mount) {
   }
   const rootProperties = properties(tree);
   const prefix = mountRelative ? `${mountRelative}/` : '';
-  const indentation = /(?:^|\n)([\t ]+)"/.exec(text)?.[1] || '  ';
-  const formattingOptions = { insertSpaces: !indentation.includes('\t'), tabSize: indentation.length,
-    eol: text.includes('\r\n') ? '\r\n' : '\n' };
   function edit(location, value) {
-    text = applyEdits(text, modify(text, location, value, { formattingOptions }));
+    text = applyEdits(text, modify(text, location, value, {}));
   }
   function migrate(key, entry, built) {
     const currentTree = parseTree(text);
@@ -193,11 +191,11 @@ export function diagnostics({ probe = spawnSync } = {}) {
 
 export async function initialize({ mount = toolkitMount, consumerRoot = process.cwd(), build = false, fault = () => {}, diagnose = diagnostics } = {}) {
   mount = safePath(mount);
-  consumerRoot = safePath(consumerRoot);
   let previous;
   try { previous = validateActiveRuntime(mount); } catch {}
   let candidate;
   try {
+    consumerRoot = safePath(consumerRoot);
     if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('Node 24 or newer is required');
     if (!build) validatePackage(mount);
     const settings = prepareSettings(consumerRoot, mount);
@@ -251,7 +249,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
       console.log(JSON.stringify(await initialize(options), null, 2));
       console.log('Ready. Reload VS Code and verify built discovery; consumer instructions were not changed.');
     } catch (error) {
-      console.error(`Init failed; this attempt is not ready. Previous runtime available: ${error.previousRuntimeAvailable === true}. ${error.message}`);
+      console.error(`Init failed; this attempt is not ready. Previous runtime available: ${error.previousRuntimeAvailable ?? 'unknown'}. ${error.message}`);
       process.exitCode = 1;
     }
   }
