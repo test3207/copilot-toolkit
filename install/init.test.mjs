@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import jsonc from './vendor/jsonc-parser/lib/umd/main.js';
 import { stageBuild } from '../scripts/build.mjs';
 import { initialize, prepareSettings, diagnostics } from './init.mjs';
-import { validatePackage, activateRuntime } from './runtime.mjs';
+import { validatePackage, validateActiveRuntime, activateRuntime, hash, identity } from './runtime.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
 const diagnose = () => ({ tools: [], warnings: [] });
@@ -49,6 +49,53 @@ async function fixture(context) {
   const mount = path.join(consumerRoot, '.copilot-toolkit');
   fs.renameSync(candidate.root, mount);
   return { consumerRoot, mount, diagnose };
+}
+
+test('optional local ignore permits ordinary init without changing package identity', async context => {
+  const options = await fixture(context);
+  const manifest = validatePackage(options.mount);
+  const ignore = path.join(options.mount, 'build/.gitignore');
+  assert.deepEqual(fs.readFileSync(ignore), Buffer.from('*\n'));
+  assert.deepEqual(validateActiveRuntime(options.mount), manifest);
+  fs.rmSync(ignore);
+  assert.equal((await initialize(options)).ready, true);
+  assert.deepEqual(validatePackage(options.mount), manifest);
+  assert.deepEqual(validateActiveRuntime(options.mount), manifest);
+  assert.equal(fs.existsSync(ignore), false);
+});
+
+for (const invalid of ['wrong bytes', 'directory', 'symlink', 'hardlink', 'unreadable', 'extra file', 'missing payload']) {
+  test(`optional local ignore still rejects ${invalid} before init writes`, async context => {
+    const options = await fixture(context);
+    const ignore = path.join(options.mount, 'build/.gitignore');
+    fs.rmSync(ignore);
+    if (invalid === 'wrong bytes') fs.writeFileSync(ignore, '*\r\n');
+    if (invalid === 'directory') fs.mkdirSync(ignore);
+    if (invalid === 'symlink') {
+      const target = path.join(options.consumerRoot, 'ignore-target');
+      fs.mkdirSync(target);
+      fs.symlinkSync(target, ignore, process.platform === 'win32' ? 'junction' : 'dir');
+    }
+    if (invalid === 'hardlink') {
+      const target = path.join(options.consumerRoot, 'ignore-target');
+      fs.writeFileSync(target, '*\n');
+      fs.linkSync(target, ignore);
+    }
+    if (invalid === 'unreadable') {
+      fs.writeFileSync(ignore, '*\n');
+      const read = fs.readFileSync;
+      context.mock.method(fs, 'readFileSync', (target, ...args) => {
+        if (target === ignore) throw new Error('Injected unreadable ignore');
+        return read(target, ...args);
+      });
+    }
+    if (invalid === 'extra file') fs.writeFileSync(path.join(options.mount, 'build/extra.txt'), 'extra');
+    if (invalid === 'missing payload') fs.rmSync(path.join(options.mount, 'build/scripts/parse-input.mjs'));
+    assert.throws(() => validatePackage(options.mount));
+    assert.throws(() => validateActiveRuntime(options.mount));
+    await assert.rejects(initialize(options));
+    assert.equal(fs.existsSync(path.join(options.consumerRoot, '.vscode')), false);
+  });
 }
 
 test('minimal consumer initializes without source or npm and is byte-idempotent', async context => {
@@ -163,6 +210,7 @@ test('self-hosting disables source discovery without disabling the built runtime
   const value = JSON.parse(prepared.after);
   assert.equal(value['chat.agentSkillsLocations']['.github/skills'], false);
   assert.equal(value['chat.agentSkillsLocations']['build/.github/skills'], true);
+  assert.equal((await initialize({ ...options, consumerRoot: options.mount })).ready, true);
   assert.deepEqual(prepareSettings(options.mount, options.mount).after, prepared.after);
 });
 
@@ -176,13 +224,77 @@ test('a consumer directly inside the toolkit mount is rejected without any write
   assert.deepEqual(fs.readdirSync(options.mount, { recursive: true }).sort(), before);
 });
 
-test('a nested toolkit mount remains supported', async context => {
+test('unsupported nested toolkit mount is rejected before ordinary init or build writes', async context => {
   const options = await fixture(context);
   fs.mkdirSync(path.join(options.consumerRoot, 'nested'));
   const mount = path.join(options.consumerRoot, 'nested/toolkit');
   fs.renameSync(options.mount, mount);
-  const prepared = prepareSettings(options.consumerRoot, mount);
-  assert.equal(JSON.parse(prepared.after)['chat.agentSkillsLocations']['nested/toolkit/build/.github/skills'], true);
+  fs.mkdirSync(path.join(options.consumerRoot, '.vscode'));
+  fs.writeFileSync(path.join(options.consumerRoot, '.vscode/settings.json'), '{"unrelated": false}\n');
+  const snapshot = () => fs.readdirSync(options.consumerRoot, { recursive: true }).sort().map(relative => {
+    const target = path.join(options.consumerRoot, relative);
+    return [relative, fs.statSync(target).isFile() ? hash(fs.readFileSync(target)) : null];
+  });
+  const legalMounts = /Toolkit mount must be the consumer root itself or its direct \.copilot-toolkit child/;
+  for (const conventionalPresent of [false, true]) {
+    if (conventionalPresent) {
+      const candidate = await stageBuild({ sourceRoot, stagingParent: options.consumerRoot });
+      fs.renameSync(candidate.root, options.mount);
+      const helper = 'scripts/parse-input.mjs';
+      const target = path.join(options.mount, 'build', helper);
+      fs.appendFileSync(target, '\n');
+      const manifest = candidate.manifest;
+      manifest.inputs.find(entry => entry.path === helper).sha256 = hash(fs.readFileSync(target));
+      manifest.payload.find(entry => entry.path === `build/${helper}`).sha256 = hash(fs.readFileSync(target));
+      manifest.inputsHash = identity(manifest.inputs);
+      manifest.payloadHash = identity(manifest.payload);
+      fs.writeFileSync(path.join(options.mount, 'build/provenance.json'), JSON.stringify(manifest));
+      assert.notEqual(validatePackage(options.mount).inputsHash, validatePackage(mount).inputsHash);
+    }
+    const before = snapshot();
+    assert.throws(() => prepareSettings(options.consumerRoot, mount), legalMounts);
+    for (const build of [false, true]) {
+      const stages = [];
+      await assert.rejects(initialize({ ...options, mount, build, fault: stage => stages.push(stage) }), legalMounts);
+      assert.deepEqual(stages, []);
+      const result = spawnSync(process.execPath, [path.join(mount, 'install/init.mjs'), ...(build ? ['--build'] : [])], {
+        cwd: options.consumerRoot, timeout: 10000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, PATH: '' },
+      });
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, legalMounts);
+      assert.deepEqual(snapshot(), before);
+    }
+  }
+});
+
+for (const name of ['toolkit', '.copilot-toolkit-other', '.copilot-toolkit2', '.COPILOT-TOOLKIT']) {
+  test(`init mount boundary for direct child ${name}`, async context => {
+    const options = await fixture(context);
+    const mount = path.join(options.consumerRoot, name);
+    fs.renameSync(options.mount, mount);
+    if (name === '.COPILOT-TOOLKIT' && process.platform === 'win32') {
+      assert.equal((await initialize({ ...options, mount, consumerRoot: options.consumerRoot.toUpperCase() })).ready, true);
+      return;
+    }
+    const before = fs.readdirSync(options.consumerRoot, { recursive: true }).sort();
+    for (const build of [false, true]) {
+      await assert.rejects(initialize({ ...options, mount, build }), /consumer root itself or its direct \.copilot-toolkit child/);
+      assert.deepEqual(fs.readdirSync(options.consumerRoot, { recursive: true }).sort(), before);
+    }
+  });
+}
+
+test('conventional mount path normalization keeps consumer ownership and link guards', async context => {
+  const options = await fixture(context);
+  const mount = `${options.mount}${path.sep}..${path.sep}.copilot-toolkit`;
+  assert.equal((await initialize({ ...options, mount })).ready, true);
+  const settings = path.join(options.consumerRoot, '.vscode/settings.json');
+  const before = fs.readFileSync(settings);
+  const alias = path.join(options.consumerRoot, 'alias');
+  fs.symlinkSync(options.mount, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  await assert.rejects(initialize({ ...options, mount: alias }), /Linked/);
+  assert.deepEqual(fs.readFileSync(settings), before);
 });
 
 test('actual packaged CLI initializes from a different cwd without source, checkout or external dependencies', async context => {

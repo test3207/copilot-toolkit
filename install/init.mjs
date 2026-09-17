@@ -16,6 +16,11 @@ export function prepareSettings(consumerRoot, mount) {
   const { parseTree, findNodeAtLocation, modify, applyEdits, createScanner, SyntaxKind } = createRequire(import.meta.url)('./vendor/jsonc-parser');
   consumerRoot = fs.realpathSync.native(safePath(consumerRoot));
   mount = fs.realpathSync.native(safePath(mount));
+  const mountRelative = path.relative(consumerRoot, mount).split(path.sep).join('/');
+  if (mountRelative === '..' || mountRelative.startsWith('../') || path.isAbsolute(mountRelative)) throw new Error('Toolkit mount must be inside the consumer root');
+  const selfHosted = mountRelative === '';
+  const mountName = process.platform === 'win32' ? mountRelative.toLowerCase() : mountRelative;
+  if (!selfHosted && mountName !== '.copilot-toolkit') throw new Error('Toolkit mount must be the consumer root itself or its direct .copilot-toolkit child');
   const target = safePath(consumerRoot, '.vscode/settings.json');
   const directoryExisted = fs.existsSync(path.dirname(target));
   const before = fs.existsSync(target) ? readBytes(consumerRoot, '.vscode/settings.json') : null;
@@ -37,9 +42,6 @@ export function prepareSettings(consumerRoot, mount) {
     return result;
   }
   const rootProperties = properties(tree);
-  const mountRelative = path.relative(consumerRoot, mount).split(path.sep).join('/');
-  if (mountRelative === '..' || mountRelative.startsWith('../') || path.isAbsolute(mountRelative)) throw new Error('Toolkit mount must be inside the consumer root');
-  const selfHosted = mountRelative === '';
   const prefix = mountRelative ? `${mountRelative}/` : '';
   const indentation = /(?:^|\n)([\t ]+)"/.exec(text)?.[1] || '  ';
   const formattingOptions = { insertSpaces: !indentation.includes('\t'), tabSize: indentation.length,

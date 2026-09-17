@@ -101,17 +101,19 @@ function validate(root, completePackage) {
   for (const entry of completePackage ? manifest.payload : runtimePayload) {
     if (hash(readBytes(root, entry.path)) !== entry.sha256) throw new Error(`Altered package file: ${entry.path}`);
   }
-  const expected = new Set([...runtimePayload.map(entry => entry.path.slice(6)), '.gitignore', 'provenance.json']);
+  const expected = new Set([...runtimePayload.map(entry => entry.path.slice(6)), 'provenance.json']);
   function visit(relative = '') {
     for (const name of fs.readdirSync(safePath(root, relative ? `build/${relative}` : 'build'))) {
       const child = relative ? `${relative}/${name}` : name;
       const target = safePath(root, `build/${child}`);
-      if (fs.lstatSync(target).isDirectory()) visit(child);
+      if (child === '.gitignore') {
+        if (!readBytes(root, 'build/.gitignore').equals(Buffer.from('*\n'))) throw new Error('Invalid local runtime ignore');
+      } else if (fs.lstatSync(target).isDirectory()) visit(child);
       else if (!expected.delete(child)) throw new Error(`Unexpected runtime file: ${child}`);
     }
   }
   visit();
-  if (expected.size || !readBytes(root, 'build/.gitignore').equals(Buffer.from('*\n'))) throw new Error('Incomplete runtime');
+  if (expected.size) throw new Error('Incomplete runtime');
   for (const entry of manifest.payload) {
     const inputPath = entry.path.startsWith('build/') ? entry.path.slice(6) : entry.path;
     if (manifest.inputs.find(input => input.path === inputPath)?.sha256 !== entry.sha256) throw new Error('Input/payload identity mismatch');

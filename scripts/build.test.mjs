@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import childProcess, { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -131,6 +132,28 @@ function sourceFixture(context) {
   git(['clone', '--quiet', '--no-hardlinks', '--no-checkout', sourceRoot, root], consumerRoot);
   for (const [relative, bytes] of snapshotInputs(sourceRoot)) write(root, relative, bytes);
   return { root, consumerRoot };
+}
+
+function cleanSourceFixture(context, name) {
+  const consumerRoot = temporaryDirectory(context);
+  const root = path.join(consumerRoot, name);
+  git(['init', '--quiet', root], consumerRoot);
+  git(['config', '--local', 'core.autocrlf', 'false'], root);
+  for (const [relative, bytes] of snapshotInputs(sourceRoot)) write(root, relative, bytes);
+  write(root, 'unrelated.txt', `${name}\n`);
+  git(['add', '--all'], root);
+  git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false',
+    '-c', `core.hooksPath=${path.join(consumerRoot, 'no-hooks')}`, 'commit', '--quiet', '-m', name], root);
+  assert.equal(git(['status', '--porcelain', '--untracked-files=all'], root), '');
+  return { root, consumerRoot };
+}
+
+async function withEnvironment(values, operation) {
+  const before = process.env;
+  const replaced = new Set(Object.keys(values).map(key => key.toUpperCase()));
+  process.env = { ...Object.fromEntries(Object.entries(before).filter(([key]) => !replaced.has(key.toUpperCase()))), ...values };
+  try { return await operation(); }
+  finally { process.env = before; }
 }
 
 function fileSet(root, relative = '') {
@@ -276,6 +299,110 @@ test('clean provenance ignores unrelated-only edits and tracks declared dirty in
   const stable = await stageBuild({ sourceRoot: root, stagingParent: root });
   assert.deepEqual(stable.manifest, second.manifest);
   assert.equal(git(['rev-parse', 'HEAD'], root), revision);
+});
+
+test('builder Git selectors cannot substitute a foreign repository for the selected source', async context => {
+  const own = cleanSourceFixture(context, 'selected-source');
+  const foreign = cleanSourceFixture(context, 'foreign-source');
+  assert.notEqual(git(['rev-parse', 'HEAD'], own.root), git(['rev-parse', 'HEAD'], foreign.root));
+  const ownGit = path.join(own.root, '.git');
+  const foreignGit = path.join(foreign.root, '.git');
+  const selectors = [
+    ['own directory', { GIT_DIR: ownGit }],
+    ['foreign directory', { GIT_DIR: foreignGit }],
+    ['foreign repository pair', { GIT_DIR: foreignGit, GIT_WORK_TREE: foreign.root }],
+    ['foreign directory own tree', { GIT_DIR: foreignGit, GIT_WORK_TREE: own.root }],
+    ['own directory foreign tree', { GIT_DIR: ownGit, GIT_WORK_TREE: foreign.root }],
+    ['foreign work tree', { GIT_WORK_TREE: foreign.root }],
+    ['foreign common directory', { GIT_COMMON_DIR: foreignGit }],
+    ['foreign index', { GIT_INDEX_FILE: path.join(foreignGit, 'index') }],
+    ['foreign objects', { GIT_OBJECT_DIRECTORY: path.join(foreignGit, 'objects') }],
+    ['alternate objects', { GIT_ALTERNATE_OBJECT_DIRECTORIES: path.join(foreignGit, 'objects') }],
+    ['combined repository selectors', { GIT_DIR: foreignGit, GIT_WORK_TREE: own.root, GIT_COMMON_DIR: foreignGit,
+      GIT_INDEX_FILE: path.join(foreignGit, 'index'), GIT_OBJECT_DIRECTORY: path.join(foreignGit, 'objects') }],
+  ];
+  for (const dirty of [false, true]) {
+    if (dirty) fs.appendFileSync(path.join(own.root, 'scripts/parse-input.mjs'), '\n');
+    const expected = await stageBuild({ sourceRoot: own.root, stagingParent: own.consumerRoot });
+    assert.equal(expected.manifest.dirty, dirty);
+    for (const [name, values] of selectors) {
+      await context.test(`${dirty ? 'dirty' : 'clean'} source with ${name}`, async () => {
+        const actual = await withEnvironment(values, () => stageBuild({ sourceRoot: own.root, stagingParent: own.consumerRoot }));
+        assert.deepEqual(actual.manifest, expected.manifest);
+        for (const entry of expected.manifest.payload) {
+          assert.deepEqual(fs.readFileSync(path.join(actual.root, entry.path)), fs.readFileSync(path.join(expected.root, entry.path)), entry.path);
+        }
+      });
+    }
+  }
+  const copy = path.join(own.root, 'source-only');
+  for (const [relative, bytes] of snapshotInputs(own.root)) write(copy, relative, bytes);
+  const before = fs.readdirSync(own.consumerRoot).sort();
+  for (const values of [{}, { GIT_DIR: foreignGit }, { GIT_DIR: foreignGit, GIT_WORK_TREE: copy }]) {
+    await withEnvironment(values, () => assert.rejects(stageBuild({ sourceRoot: copy, stagingParent: own.consumerRoot }),
+      /Build requires the toolkit source checkout/));
+    assert.deepEqual(fs.readdirSync(own.consumerRoot).sort(), before);
+  }
+});
+
+test('builder filters all 18 Git selectors case-insensitively and retains harmless configuration and auth fields', async context => {
+  const own = cleanSourceFixture(context, 'environment-source');
+  const selected = [
+    'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_QUARANTINE_PATH', 'GIT_NAMESPACE',
+    'GIT_SHALLOW_FILE', 'GIT_GRAFT_FILE', 'GIT_REPLACE_REF_BASE', 'GIT_PREFIX',
+    'GIT_INTERNAL_SUPER_PREFIX', 'GIT_IMPLICIT_WORK_TREE', 'GIT_CEILING_DIRECTORIES',
+    'GIT_DISCOVERY_ACROSS_FILESYSTEM', 'GIT_TEMPLATE_DIR', 'GIT_CONFIG',
+  ];
+  const retained = {
+    GIT_CONFIG_GLOBAL: 'fixture-global', GIT_CONFIG_SYSTEM: 'fixture-system', GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.autocrlf', GIT_CONFIG_VALUE_0: 'false',
+    GIT_CONFIG_PARAMETERS: "'core.autocrlf=false'", GIT_SSH: 'fixture-ssh', GIT_SSH_COMMAND: 'fixture-ssh-command',
+    GIT_ASKPASS: 'fixture-askpass', SSH_AUTH_SOCK: 'fixture-agent', GH_TOKEN: 'fixture-token',
+    HTTPS_PROXY: 'http://proxy.example.invalid', HTTP_PROXY: 'http://proxy.example.invalid',
+    GIT_SSL_CAINFO: 'fixture-ca', GIT_SSL_CAPATH: 'fixture-ca-path',
+  };
+  const normalEnvironment = process.env;
+  const originalSpawn = childProcess.spawnSync;
+  let calls = 0;
+  context.mock.method(childProcess, 'spawnSync', (command, args, options) => {
+    calls++;
+    const keys = Object.keys(options.env).map(key => key.toUpperCase());
+    for (const key of selected) assert.equal(keys.includes(key), false, key);
+    for (const [key, value] of Object.entries(retained)) assert.ok(options.env[key] === value, `Retain ${key}`);
+    assert.equal(options.env.GIT_TERMINAL_PROMPT, '0');
+    assert.equal(options.env.GIT_OPTIONAL_LOCKS, '0');
+    return originalSpawn(command, args, { ...options, env: normalEnvironment });
+  });
+  syncBuiltinESMExports();
+  try {
+    for (const casing of [key => key, key => key.toLowerCase(), key => `Git_${key.slice(4).toLowerCase()}`]) {
+      await withEnvironment({ ...retained, ...Object.fromEntries(selected.map(key => [casing(key), 'fixture-selector'])) },
+        () => stageBuild({ sourceRoot: own.root, stagingParent: own.consumerRoot }));
+    }
+    assert.equal(calls, 9);
+  } finally {
+    context.mock.restoreAll();
+    syncBuiltinESMExports();
+  }
+});
+
+test('builder retains linked-worktree and submodule gitfile support at arbitrary source names', async context => {
+  const own = cleanSourceFixture(context, 'arbitrary-source-name');
+  const expected = await stageBuild({ sourceRoot: own.root, stagingParent: own.consumerRoot });
+  const linked = path.join(own.consumerRoot, 'linked-source');
+  git(['-c', 'core.autocrlf=false', 'worktree', 'add', '--quiet', '--detach', linked, 'HEAD'], own.root);
+  assert.equal(fs.statSync(path.join(linked, '.git')).isFile(), true);
+  const linkedBuild = await stageBuild({ sourceRoot: linked, stagingParent: own.consumerRoot });
+  assert.deepEqual(linkedBuild.manifest, expected.manifest);
+  const parent = path.join(own.consumerRoot, 'parent');
+  git(['init', '--quiet', parent], own.consumerRoot);
+  git(['-c', 'protocol.file.allow=always', '-c', 'core.autocrlf=false', 'submodule', 'add', '--quiet', own.root, 'mounted-source'], parent);
+  const submodule = path.join(parent, 'mounted-source');
+  git(['config', '--local', 'core.autocrlf', 'false'], submodule);
+  assert.equal(fs.statSync(path.join(submodule, '.git')).isFile(), true);
+  const submoduleBuild = await stageBuild({ sourceRoot: submodule, stagingParent: own.consumerRoot });
+  assert.deepEqual(submoduleBuild.manifest, expected.manifest);
 });
 
 test('failed B after dirty helper and rules preserves executable independent runtime A and settings', async context => {

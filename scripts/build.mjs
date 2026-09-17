@@ -13,9 +13,17 @@ export function snapshotInputs(sourceRoot) {
 }
 
 function git(sourceRoot, args) {
+  const repositoryEnv = new Set([
+    'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_QUARANTINE_PATH', 'GIT_NAMESPACE',
+    'GIT_SHALLOW_FILE', 'GIT_GRAFT_FILE', 'GIT_REPLACE_REF_BASE', 'GIT_PREFIX',
+    'GIT_INTERNAL_SUPER_PREFIX', 'GIT_IMPLICIT_WORK_TREE', 'GIT_CEILING_DIRECTORIES',
+    'GIT_DISCOVERY_ACROSS_FILESYSTEM', 'GIT_TEMPLATE_DIR', 'GIT_CONFIG',
+  ]);
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !repositoryEnv.has(key.toUpperCase())));
   const result = spawnSync(process.platform === 'win32' ? 'git.exe' : 'git', ['--no-pager', ...args], {
     cwd: sourceRoot, encoding: 'utf8', timeout: 10000, windowsHide: true,
-    stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' },
+    stdio: ['ignore', 'pipe', 'pipe'], env: { ...env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' },
   });
   if (result.error || result.status !== 0) throw new Error('Source provenance requires a readable Git checkout');
   return result.stdout.trim();
