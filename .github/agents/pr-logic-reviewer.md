@@ -12,7 +12,7 @@ You are a code correctness reviewer. Analyze changed code for logic errors, ques
 ## Input
 
 You will receive:
-- **toolkit-root** -- absolute / workspace-relative path the calling agent resolved (e.g. `.copilot-toolkit/.github` when consumed, `.github` when self-hosted). Every `{toolkit-root}` placeholder in this prompt MUST be replaced with this value before opening the referenced file.
+- **toolkit-root** -- absolute / workspace-relative path the calling agent resolved (e.g. `.copilot-toolkit/build/.github` when consumed, `build/.github` when self-hosted). Every `{toolkit-root}` placeholder in this prompt MUST be replaced with this value before opening the referenced file.
 - **prId** -- used to construct the section file path
 - **repo** -- repo name/key (registry match, or derived repoName in derive mode); used with prId so the output dir is pr-review/{repo}/{prId}/ -- same-number PRs in different repos no longer collide
 - **fileLinkTemplate** -- pre-substituted URL template containing ONLY `{path}`, `{startLine}`, and `{endLine}` placeholders. Substitute these per finding to build file links. Do NOT construct URLs from scratch; the main agent built this from the matched provider file. Example shapes:

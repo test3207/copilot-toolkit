@@ -10,9 +10,9 @@ If `providers/{pr-platform}.md` does not exist, STOP and ask the user to author 
 
 **Derive mode only**: if `repoContext` came from git-remote derivation and the provider needs an identity the remote did not supply (e.g. ADO `repo-guid`), run the provider's identity-resolution recipe now (ADO: *Resolving repo identity in derive mode* in `providers/ado.md`). In registry mode the entry already carries these, so skip.
 
-**Preflight + access method**: run `node .copilot-toolkit/scripts/preflight.mjs --platform {pr-platform} --mcp-configured <true if repoContext has an ado-repo-server, else false>` (the entry prompt may have already done this and passed the result). If the report's `blocking` is non-empty (node / git / the platform credential `az` or `gh` missing) STOP and surface its `remediation` -- there is no offline mode. Resolve the provider access method (`ado-access` / `gh-access`) = explicit `.github/pr-review.json` override, else the report's `access.recommended`. Steps 1, 2, and 9 run the recipe variant for the resolved method. See `providers/{pr-platform}.md` -> `accessMethods`.
+**Preflight + access method**: run `node .copilot-toolkit/build/scripts/preflight.mjs --platform {pr-platform} --mcp-configured <true if repoContext has an ado-repo-server, else false>` (the entry prompt may have already done this and passed the result). If the report's `blocking` is non-empty (node / git / the platform credential `az` or `gh` missing) STOP and surface its `remediation` -- there is no offline mode. Resolve the provider access method (`ado-access` / `gh-access`) = explicit `.github/pr-review.json` override, else the report's `access.recommended`. Steps 1, 2, and 9 run the recipe variant for the resolved method. See `providers/{pr-platform}.md` -> `accessMethods`.
 
-**Resolve post-mode** (gates Step 9.2): `node .copilot-toolkit/scripts/pr-review-config.mjs resolve --repo-path {repoContext.path} [--post-mode <cli flag if the caller passed --auto/--confirm/--skip-post>]`. Capture `postMode` (`confirm` default | `auto` | `skip`). If the JSON has `firstRun: true`, surface its `notice` ONCE (non-blocking: three modes + the `auto` safety warning). The entry prompt may have already resolved this and passed `post-mode` -- if so, skip. Precedence and the machine-local `.github/pr-review.local/` file are documented in SKILL.md.
+**Resolve post-mode** (gates Step 9.2): `node .copilot-toolkit/build/scripts/pr-review-config.mjs resolve --repo-path {repoContext.path} [--post-mode <cli flag if the caller passed --auto/--confirm/--skip-post>]`. Capture `postMode` (`confirm` default | `auto` | `skip`). If the JSON has `firstRun: true`, surface its `notice` ONCE (non-blocking: three modes + the `auto` safety warning). The entry prompt may have already resolved this and passed `post-mode` -- if so, skip. Precedence and the machine-local `.github/pr-review.local/` file are documented in SKILL.md.
 
 ## Step 1: Get PR Info
 
@@ -31,7 +31,7 @@ Instead of checking the PR branch out in the shared working tree (which fights c
 **Enrichment config (optional)**: the script reads the reviewed repo's own `.github/pr-review.json` `worktree` block (L3, from the base checkout) automatically. If instead the registry entry carries a `worktree` block (L2), write it to a JSON file with `create_file` (e.g. `pr-review/{repo}/{prId}/worktree-config.json`) and pass `--config <that path>` -- L3 still overrides L2 if both exist. If the registry has no `worktree` block, omit `--config`. See `providers/_index.md` → *Worktree enrichment config precedence*.
 
 ```sh
-node .copilot-toolkit/scripts/pr-review-worktree.mjs setup \
+node .copilot-toolkit/build/scripts/pr-review-worktree.mjs setup \
   --repo-path {repoContext.path} --repo {repo} --pr-id {prId} \
   --source {sourceBranch} --target {targetBranch}
 ```
@@ -71,7 +71,7 @@ Step 3's script already computed and persisted the change set -- no extra `git` 
 ## Step 5: Create section dir + header + metadata + build fileLinkTemplate
 
 ```sh
-node .copilot-toolkit/scripts/pr-review-assemble.mjs init --repo {repo} --pr-id {prId}
+node .copilot-toolkit/build/scripts/pr-review-assemble.mjs init --repo {repo} --pr-id {prId}
 ```
 
 This creates `pr-review/{repo}/{prId}/sections/` and clears any prior `*.md` so a subagent's `create_file` doesn't collide on re-run.

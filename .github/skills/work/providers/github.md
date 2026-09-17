@@ -25,7 +25,7 @@ Match patterns:
 
 Return `{ id, providerHint: "github", owner, repo }`. Otherwise `null`.
 
-> `.copilot-toolkit/scripts/parse-input.mjs` upstream version covers the public github.com pattern. Consumers using GHE register their host via the same env-gate mechanism used by ICM (`process.env.GITHUB_HOST_PATTERN`).
+> `.copilot-toolkit/build/scripts/parse-input.mjs` upstream version covers the public github.com pattern. Consumers using GHE register their host via the same env-gate mechanism used by ICM (`process.env.GITHUB_HOST_PATTERN`).
 
 ### `getItem(id)`
 

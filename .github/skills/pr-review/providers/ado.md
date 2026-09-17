@@ -20,7 +20,7 @@ If `ado-resource-guid` is omitted, use `499b84ac-1321-427f-aa17-267ca6975798` (p
 When there is no registry entry and `.github/pr-review.json` did not supply `repo-guid`, resolve it once before `getPrInfo`:
 
 - Primary (MCP): `repo_get_repo_by_name_or_id` on the `{ado-repo-server}` server with `project={project}`, `repositoryNameOrId={repoName}` → take `.id` as `repoGuid` and `.name` as `repoNameForLinks`.
-- Fallback / `rest` transport: `node .copilot-toolkit/scripts/ado-rest.mjs get-repo --org {org} --project {project} --repo-name {repoName}` → prints `{ id, name, defaultBranch }`; take `.id` as `repoGuid`, `.name` as `repoNameForLinks`.
+- Fallback / `rest` transport: `node .copilot-toolkit/build/scripts/ado-rest.mjs get-repo --org {org} --project {project} --repo-name {repoName}` → prints `{ id, name, defaultBranch }`; take `.id` as `repoGuid`, `.name` as `repoNameForLinks`.
 
 In registry mode this step is skipped (the entry already carries `repo-guid`).
 
@@ -47,7 +47,7 @@ Primary path (MCP): `repo_get_pull_request_by_id` on the `{registry.ado-repo-ser
 
 Fallback / `rest` transport (ctx-isolated — the payload never enters main-agent context):
 
-`node .copilot-toolkit/scripts/ado-rest.mjs get-pr --org {org} --project {project} --repo-guid {repo-guid} --pr-id {prId} --out pr-review/{repo}/{prId}/raw-pr.json` — saves the PR object. For sovereign clouds add `--resource-guid {ado-resource-guid}`.
+`node .copilot-toolkit/build/scripts/ado-rest.mjs get-pr --org {org} --project {project} --repo-guid {repo-guid} --pr-id {prId} --out pr-review/{repo}/{prId}/raw-pr.json` — saves the PR object. For sovereign clouds add `--resource-guid {ado-resource-guid}`.
 
 ### Mapping to standard `prInfo`
 
@@ -77,7 +77,7 @@ Primary path (MCP): `repo_list_pull_request_threads` on the `{registry.ado-repo-
 
 Fallback / `rest` transport:
 
-`node .copilot-toolkit/scripts/ado-rest.mjs get-threads --org {org} --project {project} --repo-guid {repo-guid} --pr-id {prId} --out pr-review/{repo}/{prId}/raw-threads.json` — saves the thread array (already unwrapped from `.value`).
+`node .copilot-toolkit/build/scripts/ado-rest.mjs get-threads --org {org} --project {project} --repo-guid {repo-guid} --pr-id {prId} --out pr-review/{repo}/{prId}/raw-threads.json` — saves the thread array (already unwrapped from `.value`).
 
 ### Filtering
 
@@ -133,7 +133,7 @@ Primary path (MCP): `repo_create_pull_request_thread` on the `{registry.ado-repo
 
 Fallback / `rest` transport (ctx-isolated — the body never enters main-agent context):
 
-`node .copilot-toolkit/scripts/ado-rest.mjs post-comment --org {org} --project {project} --repo-guid {repo-guid} --pr-id {prId} --body-file pr-review/{repo}/{prId}/pr-comment.md` — creates a NEW thread and prints `{ threadId, status, commentId }`. For sovereign clouds add `--resource-guid {ado-resource-guid}`.
+`node .copilot-toolkit/build/scripts/ado-rest.mjs post-comment --org {org} --project {project} --repo-guid {repo-guid} --pr-id {prId} --body-file pr-review/{repo}/{prId}/pr-comment.md` — creates a NEW thread and prints `{ threadId, status, commentId }`. For sovereign clouds add `--resource-guid {ado-resource-guid}`.
 
 ### Tenant pitfall
 

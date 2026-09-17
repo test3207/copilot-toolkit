@@ -30,7 +30,7 @@ The main agent operates ONLY on the compact summaries returned by 7a-7d. Do NOT 
 ### 9.1 Assemble `review.md` (terminal concat -- no context load)
 
 ```sh
-node .copilot-toolkit/scripts/pr-review-assemble.mjs review --repo {repo} --pr-id {prId}
+node .copilot-toolkit/build/scripts/pr-review-assemble.mjs review --repo {repo} --pr-id {prId}
 ```
 
 Concatenates `sections/*.md` (filename order) into `review.md` with an explicit blank-line delimiter, so a section missing a trailing newline never collapses into the next heading.
@@ -40,7 +40,7 @@ Concatenates `sections/*.md` (filename order) into `review.md` with an explicit 
 Write the provider's `forbiddenAutoLinkPatterns` (built in Step 5) to a JSON file with `create_file`, then run the gate:
 
 ```sh
-node .copilot-toolkit/scripts/pr-review-assemble.mjs lint --repo {repo} --pr-id {prId} \
+node .copilot-toolkit/build/scripts/pr-review-assemble.mjs lint --repo {repo} --pr-id {prId} \
   --patterns pr-review/{repo}/{prId}/link-patterns.json
 ```
 
@@ -65,7 +65,7 @@ When posting, run the **postComment** recipe for the access method resolved in S
 Runs on EVERY exit of Step 9.2 -- post succeeded, was declined (`confirm` -> no), skipped (`skip`), or errored. The review never touched the user's working tree, so there's nothing to restore -- just delete the per-review worktree. The same script that built it tears it down (idempotent: a partially failed run may have already removed it):
 
 ```sh
-node .copilot-toolkit/scripts/pr-review-worktree.mjs cleanup \
+node .copilot-toolkit/build/scripts/pr-review-worktree.mjs cleanup \
   --repo-path {repoContext.path} --repo {repo} --pr-id {prId}
 ```
 

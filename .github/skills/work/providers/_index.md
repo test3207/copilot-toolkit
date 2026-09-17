@@ -7,7 +7,7 @@ Loaded by the main `/work` agent at Step 0 after registry resolution. Picks the 
 ## Resolution
 
 1. Read registry `<repo>.md` for the `issue-tracker` field. If absent, default to `ado`.
-2. Load `{toolkit-root}/skills/work/providers/<issue-tracker>.md` once per session (where `{toolkit-root}` is the path the entry prompt resolved — `.copilot-toolkit/.github` when consumed, `.github` when self-hosted).
+2. Load `{toolkit-root}/skills/work/providers/<issue-tracker>.md` once per session (where `{toolkit-root}` is the path the entry prompt resolved — `.copilot-toolkit/build/.github` when consumed, `build/.github` when self-hosted).
 3. All subsequent operations in `feature.md` / `bugfix.md` / `shared.md` resolve via the loaded provider.
 
 If the field value has no matching file: STOP and surface the error to the user (do NOT silently fall back).
@@ -18,7 +18,7 @@ Every provider MUST implement all eight operations. Provider files render each a
 
 | Operation | Inputs | Returns | Used by |
 | --------- | ------ | ------- | ------- |
-| `parseItemUrl` | URL string | `{ id, providerHint }` or `null` | `.copilot-toolkit/scripts/parse-input.mjs` extension hint; Step 0 input resolution |
+| `parseItemUrl` | URL string | `{ id, providerHint }` or `null` | `.copilot-toolkit/build/scripts/parse-input.mjs` extension hint; Step 0 input resolution |
 | `getItem` | item id | `{ id, title, body, type, parentId?, attachments[], comments[] }` | `feature.md` Step 1; `bugfix.md` Step 1 |
 | `createItem` | `{ type, title, body, parentId? }` | `{ id, url }` | `feature.md` Step 1 (no-WI branch); `shared.md` Feature Gating (lifecycle item) |
 | `addChildren` | `parentId`, `[{ title, body }]` | `[id, ...]` | `feature.md` Step 3 Split |

@@ -70,7 +70,7 @@ Write to `pr-review/{repo}/{prId}/pr-comment.md` (NOT inside `sections/` -- live
 Write the review metadata to a JSON file with `create_file` (avoids shell-quoting the model name), then build the curated comment:
 
 ```sh
-node .copilot-toolkit/scripts/pr-review-assemble.mjs comment --repo {repo} --pr-id {prId} \
+node .copilot-toolkit/build/scripts/pr-review-assemble.mjs comment --repo {repo} --pr-id {prId} \
   --meta pr-review/{repo}/{prId}/comment-meta.json
 ```
 

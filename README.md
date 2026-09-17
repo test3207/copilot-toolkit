@@ -10,12 +10,13 @@ License: MIT.
 
 | Path | Purpose |
 | --- | --- |
-| `.github/skills/<tool>/SKILL.md` | Reusable skills (entry file each). VS Code default discovery picks these up when you open this repo as a workspace. |
-| `.github/agents/<name>.md` | Subagent workers used by the skills. VS Code default discovery picks these up too. |
+| `.github/skills/<tool>/SKILL.md` | Skill authoring source; execution uses the explicit build under `build/.github/skills/`. |
+| `.github/agents/<name>.md` | Subagent authoring source; execution uses `build/.github/agents/`. |
 | `.github/prompts/<name>.prompt.md` | Thin-shim slash-command entry points (`/dep`, `/pr-review`, `/work`, `/tool-dev`, `/onboard-repo`). Each shim owns the MCP `tools:` allowlist and delegates the workflow body to the matching skill. Consumers discover these via `chat.promptFilesLocations` (see `INSTALL.md`). |
 | `scripts/` | Helper scripts, all Node. The two gates are `lint-public.mjs` and `lint-recipes.mjs`; see Contributing. |
 | `templates/` | Starter files for new consumers (`_template.prompt.md`, `template-skill/`, `copilot-instructions.template.md`). |
-| `install/` | Standalone Node sync installer (`sync.mjs`), offline tests (`sync.test.mjs`), and the `.vscode/settings.json` snippet (`settings-snippet.jsonc`) shared by both mount modes. See `INSTALL.md`. |
+| `install/` | Shared init (`init.mjs`), package validation and activation (`runtime.mjs`), pinned JSONC parser, standalone acquisition (`sync.mjs`), and tests. See `INSTALL.md`. |
+| `build/` | Locally ignored, validated runtime snapshot with raw-byte provenance. No source fallback. |
 
 ## Self-bootstrap (dev loop for skill / agent authors)
 
@@ -27,9 +28,18 @@ cd copilot-toolkit
 code .
 ```
 
-Skills under `.github/skills/` and agents under `.github/agents/` are picked up
-by VS Code's default Copilot Chat discovery -- no settings tweak required.
-Trigger any skill via Copilot Chat and iterate.
+From the checkout root, explicitly build and initialize:
+
+```sh
+node install/init.mjs --build
+```
+
+This builds the current working-tree inputs without advancing Git, then merges
+workspace discovery to `build/.github/`. Self-hosting disables the corresponding
+source locations to avoid duplicate discovery. Reload VS Code and verify the
+loaded prompt/skill path is in `build/`. After source edits, explicitly run
+`node scripts/build.mjs` again; edits do not change the active runtime until a
+successful build. There is no watcher or automatic fetch/update.
 
 Before pushing a change, run the drift gate to catch any private /
 host-specific identifiers that snuck in:
@@ -80,8 +90,10 @@ tree (settings paths and skill-resolution rules are identical for both modes):
 
 See [`INSTALL.md`](INSTALL.md) for the six supported scenarios (fresh
 consumer, existing consumer, submodule vs sync, upgrade, uninstall) with
-exact commands and verification steps. The copy-paste settings snippet lives
-at [`install/settings-snippet.jsonc`](install/settings-snippet.jsonc).
+exact commands and verification steps. Use [shared init](INSTALL.md#build-and-init)
+for setup and discovery migration. The
+[`install/settings-snippet.jsonc`](install/settings-snippet.jsonc) artifact is
+reference-only, not a copy-paste migration procedure.
 
 Short version (submodule mode) -- pick a tag from
 [Releases](https://github.com/test3207/copilot-toolkit/releases):
@@ -90,17 +102,19 @@ Short version (submodule mode) -- pick a tag from
 git submodule add -b <tag> https://github.com/test3207/copilot-toolkit.git .copilot-toolkit
 ```
 
-then add to the consumer's `.vscode/settings.json`:
+For a source checkout containing the builder, initialize from the consumer root:
 
-```jsonc
-{
-  "chat.agentSkillsLocations": { ".copilot-toolkit/.github/skills":  true },
-  "chat.agentFilesLocations":  { ".copilot-toolkit/.github/agents":  true },
-  "chat.promptFilesLocations": { ".copilot-toolkit/.github/prompts": true }
-}
+```sh
+node .copilot-toolkit/install/init.mjs --build
 ```
 
-Reload the VS Code window. Toolkit skills, agents, and prompts now coexist
+For an already built minimal package, omit `--build`. Ordinary init validates
+the selected package and merges JSONC settings without requiring Git, source,
+npm or user-profile changes. Historical source tags use their own setup;
+sync acquisition is not runtime readiness. Release-asset delivery is planned,
+not implemented. See [INSTALL.md](INSTALL.md#build-and-init) for the lifecycle.
+
+Reload the VS Code window. Built toolkit skills, agents, and prompts coexist
 with the consumer's own `.github/skills/`, `.github/agents/`, and
 `.github/prompts/` — with one caveat: two files of the same kind declaring the
 same `name:` have

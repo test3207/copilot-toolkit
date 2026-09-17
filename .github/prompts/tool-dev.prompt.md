@@ -21,7 +21,9 @@ Tool name: ${input:name:tool name}
 
 When the user runs `/tool-dev <action> <name> [user request text]`:
 
-1. Compute `$toolkitRoot = if (Test-Path '.copilot-toolkit/.github') { '.copilot-toolkit/.github' } else { '.github' }` — passed to the skill so subagents can locate `{toolkit-root}/skills/tool-dev/...` files at runtime.
+For this standalone entry and its delegated workflow, resolve toolkit-owned helper/template examples from the parent of `toolkit-root`: `.copilot-toolkit/build/` or self-hosted `build/`. Keep consumer-owned paths and the caller cwd unchanged.
+
+1. Compute `$toolkitRoot = if (Test-Path '.copilot-toolkit/build/.github') { '.copilot-toolkit/build/.github' } elseif (Test-Path 'build/.github') { 'build/.github' } else { throw 'Toolkit runtime not ready; run install/init.mjs --build in the toolkit source checkout.' }` — passed to the skill so subagents can locate `{toolkit-root}/skills/tool-dev/...` files at runtime.
 2. Validate `action` ∈ `{create, update, review}`; reject otherwise.
 3. Capture the freeform `user request text` (the sentence after `/tool-dev <action> <name>`, plus any quoted PR / WI / comment the user attached) — the Confirm Design Gate uses this to classify update intent, NOT the `${input:action}` slot.
 4. **Invoke skill `tool-dev`** with: `toolkit-root: $toolkitRoot`, `action`, `name`, `user request text`. Follow the skill's [SKILL.md](../skills/tool-dev/SKILL.md) — it owns the todo plan, the create / update / review step lists, the file-size budgets, the extensibility gate, and the Confirm Design Gate.

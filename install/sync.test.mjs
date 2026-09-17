@@ -345,7 +345,9 @@ test('Git-selected tag payload and lock match independent tree/blob objects thro
     const expected = gitPayload(tag);
     assert.equal(expected.get('bin/fixture.sh').mode, '100755');
     const startedAt = Date.now();
-    passes(sync(root, tag));
+    const installed = sync(root, tag);
+    passes(installed);
+    assert.match(installed.stdout, /Acquisition only; runtime readiness was not checked/);
     assertGitPayload(mount, expected);
     assertGitLock(mount, tag, expected, startedAt);
     assertConsumerUnchanged(root, original);
