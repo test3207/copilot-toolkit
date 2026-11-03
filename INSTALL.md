@@ -13,7 +13,7 @@ Both modes share:
 * Mount path: `.copilot-toolkit/` (relative to consumer repo root).
 * Settings snippet: `.vscode/settings.json` entries in
   [`install/settings-snippet.jsonc`](install/settings-snippet.jsonc).
-* Discovery: VS Code Copilot Chat picks up `.copilot-toolkit/build/.github/skills/`,
+* Default Local discovery: VS Code Copilot Chat picks up `.copilot-toolkit/build/.github/skills/`,
   `.copilot-toolkit/build/.github/agents/`, and `.copilot-toolkit/build/.github/prompts/`
   via those settings.
 
@@ -34,7 +34,8 @@ locally.
 ## Build and Init
 
 Node 24 LTS or newer is required. A source checkout and a minimal runtime
-package are different inputs:
+package are different inputs. The default harness is `local`; the table below
+describes Local initialization:
 
 | Selected input | Command from consumer root | Result |
 | --- | --- | --- |
@@ -59,18 +60,25 @@ are declared separately in `scripts/build.mjs`.
 
 The ignored `build/provenance.json` records the full commit, relevant dirty
 state and sorted SHA-256 input/payload identities. It contains no absolute
-machine paths. Build output includes only declared runtime resources and the
-package contains the original pinned JSONC parser; private preferences, tests,
+machine paths. Version 2 records explicit generated-output derivations and a
+fixed transform revision as well as copied-byte identity. The same frozen inputs
+produce Local resources, `build/copilot/plugin/` and `build/copilot/agents/`;
+plain build changes no discovery settings or consumer projections. Build output
+includes only declared runtime resources and the package contains pinned JSONC
+and standalone YAML parsers; private preferences, tests,
 authoring tools and repository metadata are excluded. Never edit built files.
 
 Init preserves unrelated JSONC comments, formatting and settings, and keeps
 deliberate disabled toolkit entries. Malformed JSONC, duplicate/conflicting
 ownership, corrupt packages and linked targets fail without resetting settings.
-Required activation/settings writes are transactional: ordinary failures restore
-the old runtime/settings. Restoration failure retains a recovery backup and
+Required runtime/settings/projection writes share a recovery boundary: ordinary
+failures restore previous managed bytes. Restoration failure retains a recovery backup and
 reports its location; inspect it before manual recovery or another attempt.
-First-time failure does not wire an unusable runtime. These are ordinary-failure
-guarantees, not concurrent-operation or crash-proof atomicity guarantees.
+First-time failure does not wire an unusable runtime. Managed writers serialize
+and recheck the plan before publication; rollback refuses to overwrite concurrent
+user edits. Per-file replacements are atomic, not the multi-file operation.
+Locks are not automatically broken after a crash; inspect retained backups and
+confirm no installer is running before manual recovery.
 
 Exit `0` means completion, possibly with capability warnings; `2` means invalid
 arguments; required failures are nonzero. Failed attempts report runtime
@@ -83,6 +91,67 @@ Reload VS Code after initialization. Verify the ignored build is explicitly
 discovered, source discovery is excluded, and a representative command loads
 the built path. Filesystem validation is not editor acceptance. Release-asset
 delivery remains planned; this change does not publish a distribution channel.
+
+### Explicit Copilot Preparation
+
+For an approved consumer, select the Copilot harness explicitly:
+
+```sh
+node .copilot-toolkit/install/init.mjs --harness copilot --build
+```
+
+Omit `--build` for a complete v2 package. Copilot preparation rejects v1 packages
+before consumer writes; the active v1 reader remains available for rollback.
+Mixed bootstrap/build bytes are rejected. Neither parser requires runtime npm,
+an installed editor SDK, or access to VS Code installation files.
+
+The `copilot-toolkit` plugin contains five manual skills and seven resource
+skills, with four `-internal` aliases. Ten agents are projected separately to
+consumer `.github/agents/*.agent.md`; `_template` is not activated. Source
+metadata/tools remain unchanged except the approved quality-checker model
+omission. Tool-dev takes inline action/name tokens (including quoted names),
+retains the remaining request and attachments, and clarifies incomplete input
+before side effects. Local authoring files are never rewritten.
+
+After registration, use the plugin-qualified commands in the Copilot harness:
+
+| Canonical command | Workflow |
+| --- | --- |
+| `/copilot-toolkit:dep` | Dependency audit |
+| `/copilot-toolkit:work` | Tracked-item development |
+| `/copilot-toolkit:pr-review` | Pull request review |
+| `/copilot-toolkit:onboard-repo` | Repository onboarding |
+| `/copilot-toolkit:tool-dev` | Tool development |
+
+The menu displays colons as spaces: `/copilot-toolkit tool-dev` corresponds to
+`/copilot-toolkit:tool-dev`. For example, submit
+`/copilot-toolkit:tool-dev review "tool-dev"` in that harness. Bare commands such
+as `/tool-dev` remain available through retained Local discovery and may resolve
+an old Local resource instead of the plugin wrapper. They do not prove plugin
+entry acceptance. Use the same Copilot harness and qualified entry when checking
+supported updates and rollback; follow the target-capability steps below.
+
+Success prints **Prepared**, not Ready: `status: prepared`, `ready: false`,
+`activationVerified: false`, `registration: not-checked`. The returned absolute
+`pluginLocation` and `pendingAction` hand off manual User/MACHINE-scope
+`chat.pluginLocations` registration, reload and live discovery/execution checks.
+Copilot preparation never calls Local settings migration, writes workspace
+plugin locations, or modifies User/Profile settings. Existing Local discovery
+settings are left untouched; preparation is not a harness activation claim.
+
+Ownership is recorded outside the mount at
+`.github/.copilot-toolkit/copilot-agents.json` (version, relative path, YAML name,
+installed hash and package identity). Even an identical unowned agent is a
+conflict, not adopted. Filename/case/YAML-name conflicts, invalid YAML identities,
+edited owned files and unsafe links stop preparation. Keep this ledger with its
+managed projections; do not hand-edit them.
+
+To return to Local, run init with `--harness local` (or omit the flag). It removes
+only unchanged owned projections and the ledger, then performs the usual Local
+JSONC migration in the same recovery boundary. Do this before replacing a newer
+installer with a historical one or uninstalling its mount. Sync remains
+acquisition-only: it neither initializes consumers nor removes these projections.
+Static tests and successful preparation do not establish live Host acceptance.
 
 ---
 
@@ -360,17 +429,27 @@ If the current tag predates the Node entry point, re-download a modern bootstrap
 as in Scenario 2 and run `node sync-bootstrap.mjs --tag <tag>` instead. Use the
 same approach to select newer installer behavior independently of the target tag.
 
-After selecting a source checkout with the builder, explicitly run
-`node .copilot-toolkit/install/init.mjs --build`. For a complete built package,
-run ordinary init instead. Historical source-only sync tags retain their own
-setup. Neither updating a submodule nor successful sync activates a new runtime
-through this shared build/init lifecycle automatically.
+After selecting a revision, choose by the target's capabilities and retain the
+selected harness. The commands are repeated here because omitting `--harness`
+selects Local and removes unchanged owned Copilot projections and their ledger.
+
+| Selected input | Local (default) | Copilot (supported v2 targets only) |
+| --- | --- | --- |
+| Source checkout with the builder | `node .copilot-toolkit/install/init.mjs --build` | `node .copilot-toolkit/install/init.mjs --harness copilot --build` |
+| Complete built package | `node .copilot-toolkit/install/init.mjs` | `node .copilot-toolkit/install/init.mjs --harness copilot` |
+
+Historical source-only sync tags retain their own setup. Neither updating a
+submodule nor successful sync activates a new runtime through this shared
+build/init lifecycle automatically.
 
 **Verify (both modes)**
 
-1. Reload VS Code.
-2. Trigger a representative skill end-to-end (the consumer's repo-specific
-   smoke test list, if any).
+1. **Local**: require **Ready**, then reload VS Code and verify built Local
+  discovery. **Copilot**: expect **Prepared** and follow the returned
+  `pendingAction` in [Explicit Copilot Preparation](#explicit-copilot-preparation)
+  for registration, reload and live checks. Preparation is not activation.
+2. After the harness-specific steps, trigger a representative skill end-to-end
+  (the consumer's repo-specific smoke test list, if any).
 3. **Check your own instructions file for helper paths that moved.** The toolkit
    does not write to your `.github/copilot-instructions.md`, so anything you
    copied from `templates/copilot-instructions.template.md` -- or any prose or
@@ -388,6 +467,11 @@ through this shared build/init lifecycle automatically.
 ---
 
 ## Scenario 6: Uninstall / rollback
+
+Before uninstalling the mount, complete
+[Copilot cleanup](#explicit-copilot-preparation) with the current installer.
+Mount removal and standalone sync do not remove the owned projections or ledger
+outside the mount.
 
 ### Submodule mode
 
@@ -416,6 +500,9 @@ ownership, lock-path and link checks still apply, even with `--force`.
 
 ### Rolling back to a previous tag
 
+Before selecting a historical target without Copilot support, complete
+[Copilot cleanup](#explicit-copilot-preparation) with the current installer.
+
 * Submodule: `git -C .copilot-toolkit checkout vX.Y.Z-previous`, then
   `git add .copilot-toolkit && git commit -m "Roll back to vX.Y.Z-previous"`.
 * Sync: keep a modern bootstrap **outside** `.copilot-toolkit/` before rollback.
@@ -430,10 +517,14 @@ with [Build and Init](#build-and-init); the commands are repeated here because
 selecting a revision can leave a newer ignored runtime active. From the consumer
 root, choose by the selected target's capabilities, not by a leftover `build/`:
 
-* **Source checkout** with `scripts/build.mjs` and `install/init.mjs`: run
+* **Source checkout** with `scripts/build.mjs` and `install/init.mjs`: Local: run
   `node .copilot-toolkit/install/init.mjs --build` to build and activate that source.
-* **Built package** containing its own complete `build/` and `install/`: run
+  Copilot (supported v2 source only): run
+  `node .copilot-toolkit/install/init.mjs --harness copilot --build` instead.
+* **Built package** containing its own complete `build/` and `install/`: Local: run
   `node .copilot-toolkit/install/init.mjs` to validate it and merge discovery.
+  Copilot (complete v2 package only): run
+  `node .copilot-toolkit/install/init.mjs --harness copilot` instead.
 * **Historical source-only** target without build/init: do not invoke an
   unavailable entry point. Follow the target tag's own setup, then remove or disable
   only toolkit discovery entries still pointing at the newer
@@ -443,7 +534,10 @@ root, choose by the selected target's capabilities, not by a leftover `build/`:
 
 For build/init targets, require successful init and confirm its reported
 `sourceCommit` and `inputIdentity` identify the intended rollback revision and
-inputs. Reload VS Code in either case and verify a representative command loads
+inputs. Local requires **Ready**; Copilot reports **Prepared** and still requires
+the returned `pendingAction` from
+[Explicit Copilot Preparation](#explicit-copilot-preparation) before editor checks.
+Reload VS Code and verify a representative command loads
 the selected tag's runtime: built paths for build/init targets, or the target's
 documented layout for historical source-only targets, never the leftover newer
 runtime. Record any resulting consumer settings changes with the rollback.
@@ -454,7 +548,8 @@ runtime. Record any resulting consumer settings changes with the rollback.
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| `/` menu doesn't show toolkit skills after init | Build missing, settings paths wrong or window not reloaded | Verify readiness, then reload. The three discovery maps must point at `.copilot-toolkit/build/.github/skills`, `agents` and `prompts`. |
+| **Local**: `/` menu doesn't show toolkit skills after init | Build missing, settings paths wrong or window not reloaded | Require **Ready**, then reload. The three discovery maps must point at `.copilot-toolkit/build/.github/skills`, `agents` and `prompts`. |
+| **Copilot**: toolkit skills are unavailable after preparation | Registration or live acceptance still pending | **Prepared** is not Ready or proof of activation. Follow the returned `pendingAction` in [Explicit Copilot Preparation](#explicit-copilot-preparation); Local discovery maps are not the Copilot checklist. |
 | `git submodule update --remote` does nothing | `.gitmodules` has no `branch` entry pinned | `git config -f .gitmodules submodule..copilot-toolkit.branch vX.Y.Z` (then commit). |
 | `node .copilot-toolkit/install/sync.mjs --tag vX.Y.Z` refuses with "Local edits detected" | One or more files inside `.copilot-toolkit/` differ from the previously-synced manifest (`.copilot-toolkit/.sync-lock`) beyond permitted text newline equivalence | Either restore the file to its upstream content, or add `--force` to overwrite and discard the local edit. Never edit files inside `.copilot-toolkit/` -- propose the change upstream instead. |
 | Subagent fails with "skill file not found" | Wrong `toolkit-root` input | Pass the resolved `.copilot-toolkit/build/.github` or self-hosted `build/.github` root; missing builds must stop, never fall back to source. |

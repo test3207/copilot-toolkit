@@ -9,24 +9,83 @@ import jsonc from './vendor/jsonc-parser/lib/umd/main.js';
 import { stageBuild } from '../scripts/build.mjs';
 import { initialize, prepareSettings, diagnostics } from './init.mjs';
 import { validatePackage, validateActiveRuntime, validateVendor, activateRuntime, hash, identity } from './runtime.mjs';
+import { prepareCopilot, ledgerPath } from './copilot.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
 const diagnose = () => ({ tools: [], warnings: [] });
+
+test('Copilot entry documentation distinguishes qualified commands from retained Local names', () => {
+  const handbook = fs.readFileSync(path.join(sourceRoot, 'INSTALL.md'), 'utf8');
+  const preparation = handbook.split(/### Explicit Copilot Preparation\r?\n/)[1]?.split(/\r?\n---/)[0];
+  assert.ok(preparation, 'Explicit Copilot preparation section exists');
+  const commands = [...preparation.matchAll(/^\| `([^`]+)` \|/gm)].map(match => match[1]);
+  assert.deepEqual(commands, [
+    '/copilot-toolkit:dep',
+    '/copilot-toolkit:work',
+    '/copilot-toolkit:pr-review',
+    '/copilot-toolkit:onboard-repo',
+    '/copilot-toolkit:tool-dev',
+  ]);
+  assert.match(preparation, /menu displays colons as spaces[\s\S]*`\/copilot-toolkit tool-dev`/);
+  assert.match(preparation, /`\/copilot-toolkit:tool-dev review "tool-dev"`/);
+  assert.match(preparation, /Bare commands[\s\S]*`\/tool-dev`[\s\S]*retained Local[\s\S]*old Local resource/);
+  assert.match(preparation, /same Copilot harness[\s\S]*updates and rollback/);
+});
 
 test('rollback documentation hands off by target capability before editor verification', () => {
   const handbook = fs.readFileSync(path.join(sourceRoot, 'INSTALL.md'), 'utf8');
   const rollback = handbook.split(/### Rolling back to a previous tag\r?\n/)[1]?.split(/\r?\n---/)[0];
   assert.ok(rollback, 'Rollback section exists');
+  const sourceCheckout = rollback.split(/\* \*\*Source checkout\*\*/)[1]?.split(/\r?\n\* /)[0];
+  const builtPackage = rollback.split(/\* \*\*Built package\*\*/)[1]?.split(/\r?\n\* /)[0];
+  assert.ok(sourceCheckout, 'Source rollback branch exists');
+  assert.ok(builtPackage, 'Package rollback branch exists');
   assert.match(rollback, /\[Build and Init\]\(#build-and-init\)/);
-  assert.match(rollback, /Source checkout[^\n]*scripts\/build\.mjs[^\n]*install\/init\.mjs/);
-  assert.match(rollback, /node \.copilot-toolkit\/install\/init\.mjs --build/);
-  assert.match(rollback, /Built package[^\n]*\n[^\n]*`node \.copilot-toolkit\/install\/init\.mjs`/);
+  assert.match(sourceCheckout, /scripts\/build\.mjs[^\n]*install\/init\.mjs/);
+  assert.match(sourceCheckout, /Local: run\s+`node \.copilot-toolkit\/install\/init\.mjs --build`/);
+  assert.match(sourceCheckout, /Copilot \(supported v2 source only\): run\s+`node \.copilot-toolkit\/install\/init\.mjs --harness copilot --build`/);
+  assert.match(builtPackage, /Local: run\s+`node \.copilot-toolkit\/install\/init\.mjs`/);
+  assert.match(builtPackage, /Copilot \(complete v2 package only\): run\s+`node \.copilot-toolkit\/install\/init\.mjs --harness copilot`/);
   assert.match(rollback, /Historical source-only[\s\S]*target tag's own setup/);
   assert.match(rollback, /remove or disable[\s\S]*newer[\s\S]*build\/\.github\//);
   assert.match(rollback, /Preserve unrelated[\s\S]*false/);
+  assert.match(rollback, /Before selecting a historical target without Copilot support[\s\S]*\[Copilot cleanup\]\(#explicit-copilot-preparation\)[\s\S]*current installer/);
+  assert.ok(rollback.indexOf('[Copilot cleanup]') < rollback.indexOf('checkout vX.Y.Z-previous'));
+  assert.match(rollback, /Local requires \*\*Ready\*\*/);
+  assert.match(rollback, /Copilot reports \*\*Prepared\*\*[\s\S]*`pendingAction`[\s\S]*\(#explicit-copilot-preparation\)/);
   assert.match(rollback, /Reload VS Code[\s\S]*selected[\s\S]*runtime/);
   assert.ok(rollback.indexOf('checkout vX.Y.Z-previous') < rollback.indexOf('install/init.mjs --build'));
   assert.ok(rollback.indexOf('install/init.mjs --build') < rollback.indexOf('Reload VS Code'));
+});
+
+test('lifecycle documentation preserves explicit Copilot preparation and Local-only discovery', () => {
+  const handbook = fs.readFileSync(path.join(sourceRoot, 'INSTALL.md'), 'utf8');
+  const upgrade = handbook.split(/## Scenario 5: Upgrade to a newer release\r?\n/)[1]?.split(/\r?\n---/)[0];
+  const uninstall = handbook.split(/## Scenario 6: Uninstall \/ rollback\r?\n/)[1]?.split(/### Rolling back to a previous tag/)[0];
+  const troubleshooting = handbook.split(/## Troubleshooting\r?\n/)[1]?.split(/\r?\n---/)[0];
+  assert.ok(upgrade, 'Upgrade section exists');
+  assert.ok(uninstall, 'Uninstall section exists');
+  assert.ok(troubleshooting, 'Troubleshooting section exists');
+  assert.match(upgrade, /\| Local \(default\) \| Copilot \(supported v2 targets only\) \|/);
+  assert.match(upgrade, /\| Source checkout[^\n]*\| `node \.copilot-toolkit\/install\/init\.mjs --build` \| `node \.copilot-toolkit\/install\/init\.mjs --harness copilot --build` \|/);
+  assert.match(upgrade, /\| Complete built package \| `node \.copilot-toolkit\/install\/init\.mjs` \| `node \.copilot-toolkit\/install\/init\.mjs --harness copilot` \|/);
+  assert.match(upgrade, /omitting `--harness`[\s\S]*selects Local[\s\S]*removes unchanged owned Copilot projections/);
+  const verification = upgrade.split('**Verify (both modes)**')[1];
+  assert.ok(verification, 'Upgrade verification exists');
+  assert.match(verification, /\*\*Local\*\*: require \*\*Ready\*\*/);
+  assert.match(verification, /\*\*Copilot\*\*: expect \*\*Prepared\*\*[\s\S]*`pendingAction`[\s\S]*\(#explicit-copilot-preparation\)/);
+  assert.match(uninstall, /Before uninstalling the mount[\s\S]*\[Copilot cleanup\]\(#explicit-copilot-preparation\)[\s\S]*current installer/);
+  assert.ok(uninstall.indexOf('[Copilot cleanup]') < uninstall.indexOf('git submodule deinit'));
+  assert.ok(uninstall.indexOf('[Copilot cleanup]') < uninstall.indexOf('install/sync.mjs --uninstall'));
+  const localRow = troubleshooting.split(/\r?\n/).find(line => line.startsWith('| **Local**:'));
+  const copilotRow = troubleshooting.split(/\r?\n/).find(line => line.startsWith('| **Copilot**:'));
+  assert.ok(localRow, 'Local troubleshooting row exists');
+  assert.ok(copilotRow, 'Copilot troubleshooting row exists');
+  assert.match(localRow, /\*\*Ready\*\*[^\n]*three discovery maps/);
+  assert.match(copilotRow, /\*\*Prepared\*\*[^\n]*`pendingAction`[^\n]*\(#explicit-copilot-preparation\)/);
+  for (const row of troubleshooting.split(/\r?\n/).filter(line => line.includes('three discovery maps'))) {
+    assert.match(row, /^\| \*\*Local\*\*:/);
+  }
 });
 
 test('settings documentation uses shared init instead of additive discovery migration', () => {
@@ -42,14 +101,317 @@ test('settings documentation uses shared init instead of additive discovery migr
   assert.match(readme, /\[.*install\/settings-snippet\.jsonc.*\]\(install\/settings-snippet\.jsonc\)/);
 });
 
+function removeFixture(target) {
+  const stat = fs.lstatSync(target, { throwIfNoEntry: false });
+  if (!stat) return;
+  if (!stat.isDirectory() || stat.isSymbolicLink()) { fs.unlinkSync(target); return; }
+  for (const name of fs.readdirSync(target)) removeFixture(path.join(target, name));
+  fs.rmdirSync(target);
+}
+
+function copyFixture(source, target) {
+  if (!fs.statSync(source).isDirectory()) { fs.copyFileSync(source, target); return; }
+  fs.mkdirSync(target, { recursive: true });
+  for (const name of fs.readdirSync(source)) copyFixture(path.join(source, name), path.join(target, name));
+}
+
 async function fixture(context) {
   const consumerRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'toolkit init space \u6d4b\u8bd5 '));
-  context.after(() => fs.rmSync(consumerRoot, { recursive: true, force: true }));
+  context.after(() => removeFixture(consumerRoot));
   const candidate = await stageBuild({ sourceRoot, stagingParent: consumerRoot });
   const mount = path.join(consumerRoot, '.copilot-toolkit');
   fs.renameSync(candidate.root, mount);
   return { consumerRoot, mount, diagnose };
 }
+
+test('Copilot plan is mutation-free and rejects unowned, case and YAML identity collisions', async context => {
+  const options = await fixture(context);
+  const plan = () => prepareCopilot({ consumerRoot: options.consumerRoot, packageRoot: options.mount });
+  assert.equal((await plan()).changes.length, 11);
+  assert.equal(fs.existsSync(path.join(options.consumerRoot, '.github')), false);
+  const directory = path.join(options.consumerRoot, '.github/agents');
+  fs.mkdirSync(directory, { recursive: true });
+  const projected = fs.readFileSync(path.join(options.mount, 'build/copilot/agents/work-implementer.agent.md'));
+  for (const [filename, bytes] of [
+    ['work-implementer.agent.md', projected],
+    ['WORK-IMPLEMENTER.agent.md', projected],
+    ['other.agent.md', Buffer.from('---\nname: "work-implementer"\n---\nConsumer file')],
+    ['other.agent.md', Buffer.from('---\nname: WORK-IMPLEMENTER\n---\nConsumer file')],
+    ['other.agent.md', Buffer.from('---\nname: " work-implementer "\n---\nConsumer file')],
+    ['other.agent.md', Buffer.from('---\nname: >\n  work-implementer\n---\nConsumer file')],
+    ['other.agent.md', Buffer.from('---\nname: [work-implementer]\n---\nConsumer file')],
+    ['other.agent.md', Buffer.from('---\nname: unique\nname: work-implementer\n---\nConsumer file')],
+    ['other.agent.md', Buffer.from('---\nname: unique\n...\nname: work-implementer\n---\nConsumer file')],
+  ]) {
+    const target = path.join(directory, filename);
+    fs.writeFileSync(target, bytes);
+    await assert.rejects(plan());
+    assert.deepEqual(fs.readFileSync(target), bytes);
+    assert.equal(fs.existsSync(path.join(options.consumerRoot, ledgerPath)), false);
+    fs.unlinkSync(target);
+    assert.equal(fs.existsSync(target), false, filename);
+  }
+  const prepared = await plan();
+  fs.writeFileSync(path.join(directory, 'late.agent.md'), '---\nname: late\n---\n');
+  assert.throws(prepared.recheck, /Concurrent/);
+  assert.equal(await prepareCopilot({ consumerRoot: options.consumerRoot, remove: true }), null);
+});
+
+test('Copilot plan validates owned hashes, ledger paths and linked targets before writes', async context => {
+  const options = await fixture(context);
+  const plan = () => prepareCopilot({ consumerRoot: options.consumerRoot, packageRoot: options.mount });
+  const initial = await plan();
+  for (const change of initial.changes) {
+    const target = path.join(options.consumerRoot, change.path);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, change.after);
+  }
+  assert.deepEqual((await plan()).changes, []);
+  assert.equal((await prepareCopilot({ consumerRoot: options.consumerRoot, remove: true })).changes.length, 11);
+  const target = path.join(options.consumerRoot, '.github/agents/work-implementer.agent.md');
+  const before = fs.readFileSync(target);
+  fs.appendFileSync(target, '\nuser edit');
+  await assert.rejects(plan(), /Edited owned/);
+  await assert.rejects(prepareCopilot({ consumerRoot: options.consumerRoot, remove: true }), /Edited owned/);
+  fs.unlinkSync(target);
+  assert.equal(fs.existsSync(target), false);
+  await assert.rejects(plan(), /Missing owned/);
+  fs.writeFileSync(target, before);
+  const ledger = path.join(options.consumerRoot, ledgerPath);
+  const original = fs.readFileSync(ledger);
+  for (const mutate of [draft => { draft.version = 2; }, draft => { draft.files[0].path = '../outside'; },
+    draft => { draft.files.push(draft.files[0]); }, draft => { draft.packageIdentity = 'unknown'; },
+    draft => { draft.packageIdentity = [draft.packageIdentity]; }, draft => { draft.files[0].installedHash = [draft.files[0].installedHash]; }]) {
+    const draft = JSON.parse(original);
+    mutate(draft);
+    fs.writeFileSync(ledger, JSON.stringify(draft));
+    await assert.rejects(plan(), /Invalid/);
+  }
+  fs.writeFileSync(ledger, original);
+  fs.unlinkSync(target);
+  const external = path.join(options.consumerRoot, 'external');
+  fs.writeFileSync(external, before);
+  fs.linkSync(external, target);
+  await assert.rejects(plan(), /linked input/);
+  fs.unlinkSync(target);
+  fs.writeFileSync(target, before);
+  const directory = path.join(options.consumerRoot, '.github/agents');
+  fs.renameSync(directory, `${directory}-original`);
+  fs.symlinkSync(`${directory}-original`, directory, process.platform === 'win32' ? 'junction' : 'dir');
+  await assert.rejects(plan(), /Linked/);
+});
+
+test('Copilot prepare is idempotent, settings-neutral and Local removes only owned agents', async context => {
+  const options = await fixture(context);
+  fs.mkdirSync(path.join(options.consumerRoot, '.vscode'));
+  const settings = path.join(options.consumerRoot, '.vscode/settings.json');
+  const original = Buffer.from('\uFEFF{\n// keep\n"chat.agentFilesLocations": {"custom": false},\n"chat.pluginLocations": {"consumer": false}\n}\n');
+  fs.writeFileSync(settings, original);
+  const initialized = await initialize({ ...options, harness: 'copilot' });
+  assert.equal(initialized.status, 'prepared');
+  assert.equal(initialized.ready, false);
+  assert.equal(initialized.activationVerified, false);
+  assert.equal(initialized.registration, 'not-checked');
+  assert.match(initialized.pendingAction, /User\/MACHINE-scope chat\.pluginLocations/);
+  assert.equal(initialized.pluginLocation, fs.realpathSync.native(path.join(options.mount, 'build/copilot/plugin')));
+  assert.deepEqual(fs.readFileSync(settings), original);
+  const ledger = path.join(options.consumerRoot, ledgerPath);
+  const before = fs.readFileSync(ledger);
+  await initialize({ ...options, harness: 'copilot' });
+  assert.deepEqual(fs.readFileSync(ledger), before);
+  assert.deepEqual(fs.readFileSync(settings), original);
+  const custom = path.join(options.consumerRoot, '.github/agents/custom.agent.md');
+  fs.writeFileSync(custom, '---\nname: consumer\n---\nConsumer body\n');
+  assert.equal((await initialize(options)).ready, true);
+  assert.equal(fs.existsSync(ledger), false);
+  assert.deepEqual(fs.readdirSync(path.dirname(custom)), ['custom.agent.md']);
+  assert.equal(jsonc.parse(fs.readFileSync(settings, 'utf8').replace(/^\uFEFF/, ''))['chat.pluginLocations'].consumer, false);
+});
+
+test('Copilot prepare rolls back agents and ledger at every publication stage', async context => {
+  const options = await fixture(context);
+  for (const phase of ['before-activate', 'after-activate', 'agent-write', 'agent-written', 'ledger-write', 'ledger-written', 'after-settings']) {
+    await assert.rejects(initialize({ ...options, harness: 'copilot', fault(stage) { if (stage === phase) throw new Error(phase); } }), /Activation failed/);
+    assert.equal(fs.existsSync(path.join(options.consumerRoot, '.github')), false, phase);
+    assert.equal(fs.existsSync(path.join(options.consumerRoot, '.vscode')), false);
+    validatePackage(options.mount);
+    assert.equal(fs.readdirSync(options.mount).some(name => /^\.(?:runtime-lock|runtime-backup)/.test(name)), false);
+  }
+});
+
+function updatePackagedAgent(mount, name, suffix) {
+  const manifest = validatePackage(mount);
+  const input = `.github/agents/${name}.md`;
+  for (const relative of [`build/${input}`, `build/copilot/agents/${name}.agent.md`]) {
+    fs.appendFileSync(path.join(mount, relative), suffix);
+    manifest.payload.find(entry => entry.path === relative).sha256 = hash(fs.readFileSync(path.join(mount, relative)));
+  }
+  manifest.inputs.find(entry => entry.path === input).sha256 = manifest.payload.find(entry => entry.path === `build/${input}`).sha256;
+  manifest.inputsHash = identity(manifest.inputs);
+  manifest.payloadHash = identity(manifest.payload);
+  fs.writeFileSync(path.join(mount, 'build/provenance.json'), JSON.stringify(manifest));
+  validatePackage(mount);
+}
+
+test('Copilot lifecycle updates hashes, deletes retired ownership and refuses edited removal', async context => {
+  const options = await fixture(context);
+  await initialize({ ...options, harness: 'copilot' });
+  const ledger = path.join(options.consumerRoot, ledgerPath);
+  const before = JSON.parse(fs.readFileSync(ledger));
+  const retired = '.github/agents/retired.agent.md';
+  const bytes = Buffer.from('---\nname: retired\n---\nRetired owned agent\n');
+  fs.writeFileSync(path.join(options.consumerRoot, retired), bytes);
+  before.files.push({ path: retired, name: 'retired', installedHash: hash(bytes) });
+  fs.writeFileSync(ledger, JSON.stringify(before));
+  updatePackagedAgent(options.mount, 'work-implementer', '\nNew package body\n');
+  await initialize({ ...options, harness: 'copilot' });
+  const after = JSON.parse(fs.readFileSync(ledger));
+  assert.notEqual(after.packageIdentity, before.packageIdentity);
+  assert.equal(fs.existsSync(path.join(options.consumerRoot, retired)), false);
+  assert.equal(after.files.length, 10);
+  for (const entry of after.files) assert.equal(hash(fs.readFileSync(path.join(options.consumerRoot, entry.path))), entry.installedHash);
+  const target = path.join(options.consumerRoot, '.github/agents/work-implementer.agent.md');
+  fs.appendFileSync(target, '\nConsumer edit\n');
+  const edited = fs.readFileSync(target);
+  await assert.rejects(initialize(options), /Edited owned/);
+  await assert.rejects(initialize({ ...options, harness: 'copilot' }), /Edited owned/);
+  assert.deepEqual(fs.readFileSync(target), edited);
+  assert.deepEqual(JSON.parse(fs.readFileSync(ledger)), after);
+  assert.equal(fs.existsSync(path.join(options.consumerRoot, '.vscode')), false);
+});
+
+test('Copilot concurrency rechecks the full plan and serializes publication', async context => {
+  const options = await fixture(context);
+  await initialize({ ...options, harness: 'copilot' });
+  const ledger = path.join(options.consumerRoot, ledgerPath);
+  const original = fs.readFileSync(ledger);
+  const agent = path.join(options.consumerRoot, '.github/agents/pr-finding-validator.agent.md');
+  const before = fs.readFileSync(agent);
+  updatePackagedAgent(options.mount, 'pr-finding-validator', '\nUpdate\n');
+  const late = path.join(options.consumerRoot, '.github/agents/late.agent.md');
+  await assert.rejects(initialize({ ...options, harness: 'copilot', fault(phase) {
+    if (phase === 'planned') fs.writeFileSync(late, '---\nname: pr-finding-validator\n---\n');
+  } }), /Activation failed/);
+  assert.deepEqual(fs.readFileSync(agent), before);
+  assert.deepEqual(fs.readFileSync(ledger), original);
+  fs.unlinkSync(late);
+  await assert.rejects(initialize({ ...options, harness: 'copilot', fault(phase) {
+    if (phase === 'agent-write') fs.appendFileSync(agent, '\nConcurrent edit\n');
+  } }), /Activation failed/);
+  assert.match(fs.readFileSync(agent, 'utf8'), /Concurrent edit/);
+  assert.deepEqual(fs.readFileSync(ledger), original);
+  fs.writeFileSync(agent, before);
+  const lock = path.join(options.consumerRoot, '.github/.copilot-toolkit/copilot-agents.lock');
+  fs.mkdirSync(lock);
+  await assert.rejects(initialize({ ...options, harness: 'copilot' }), /Activation failed/);
+  assert.equal(fs.existsSync(lock), true);
+  assert.deepEqual(fs.readFileSync(agent), before);
+  fs.rmdirSync(lock);
+  const runtimeLock = path.join(options.mount, '.runtime-lock');
+  fs.mkdirSync(runtimeLock);
+  await assert.rejects(initialize({ ...options, harness: 'copilot' }), /EEXIST/);
+  assert.equal(fs.existsSync(runtimeLock), true);
+  fs.rmdirSync(runtimeLock);
+  await initialize({ ...options, harness: 'copilot' });
+});
+
+test('Copilot concurrency preserves user edits during rollback and retains recovery backups', async context => {
+  for (const concurrent of ['agent', 'ledger', 'restoration']) {
+    const options = await fixture(context);
+    await initialize({ ...options, harness: 'copilot' });
+    const relative = '.github/agents/pr-finding-validator.agent.md';
+    const agent = path.join(options.consumerRoot, relative);
+    const beforeAgent = fs.readFileSync(agent);
+    const ledger = path.join(options.consumerRoot, ledgerPath);
+    const beforeLedger = fs.readFileSync(ledger);
+    updatePackagedAgent(options.mount, 'pr-finding-validator', '\nPublished update\n');
+    await assert.rejects(initialize({ ...options, harness: 'copilot', fault(phase) {
+      if (concurrent === 'agent' && phase === 'agent-written') {
+        fs.appendFileSync(agent, '\nConcurrent consumer edit\n');
+        throw new Error('post-write failure');
+      }
+      if (phase === 'ledger-written') {
+        if (concurrent === 'ledger') fs.appendFileSync(ledger, '\n ');
+        throw new Error('post-ledger failure');
+      }
+      if (concurrent === 'restoration' && phase === 'projection-restore') throw new Error('restore failure');
+    } }), /restoration failed.*Recovery backup retained/);
+    const backup = fs.readdirSync(options.mount).find(name => name.startsWith('.runtime-backup-'));
+    assert.ok(backup);
+    assert.deepEqual(fs.readFileSync(path.join(options.mount, backup, 'consumer', relative)), beforeAgent);
+    assert.deepEqual(fs.readFileSync(path.join(options.mount, backup, 'consumer', ledgerPath)), beforeLedger);
+    if (concurrent === 'agent') assert.match(fs.readFileSync(agent, 'utf8'), /Concurrent consumer edit/);
+    if (concurrent === 'ledger') assert.notDeepEqual(fs.readFileSync(ledger), beforeLedger);
+    assert.equal(fs.existsSync(path.join(options.mount, '.runtime-lock')), false);
+    assert.equal(fs.existsSync(path.join(options.consumerRoot, '.github/.copilot-toolkit/copilot-agents.lock')), false);
+  }
+});
+
+test('Copilot packaged CLI is source-free, settings-neutral and says Prepared, never Ready', async context => {
+  const options = await fixture(context);
+  fs.mkdirSync(path.join(options.consumerRoot, '.vscode'));
+  const settings = path.join(options.consumerRoot, '.vscode/settings.json');
+  fs.writeFileSync(settings, 'not JSONC; Copilot must not call prepareSettings');
+  const cli = path.join(options.mount, 'install/init.mjs');
+  const run = args => spawnSync(process.execPath, [cli, ...args], {
+    cwd: options.consumerRoot, encoding: 'utf8', timeout: 30000, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PATH: '' },
+  });
+  for (const args of [['--harness'], ['--harness', 'invalid'], ['--harness', 'copilot', '--harness', 'local']]) assert.equal(run(args).status, 2);
+  const result = run(['--harness', 'copilot']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Prepared\./);
+  assert.doesNotMatch(result.stdout, /Ready\./);
+  assert.match(result.stdout, /"ready": false/);
+  assert.match(result.stdout, /"activationVerified": false/);
+  assert.match(result.stdout, /"registration": "not-checked"/);
+  assert.equal(fs.readFileSync(settings, 'utf8'), 'not JSONC; Copilot must not call prepareSettings');
+  for (const absent of ['scripts', '.github', 'node_modules', '.git']) assert.equal(fs.existsSync(path.join(options.mount, absent)), false);
+  validatePackage(options.mount);
+});
+
+test('Copilot YAML vendor is closed and hash-checked before fresh CLI imports', async context => {
+  const options = await fixture(context);
+  const marker = path.join(options.consumerRoot, 'yaml-marker');
+  const parser = path.join(options.mount, 'install/vendor/js-yaml/dist/js-yaml.mjs');
+  const original = fs.readFileSync(parser);
+  const cli = () => spawnSync(process.execPath, [path.join(options.mount, 'install/init.mjs'), '--harness', 'copilot'], {
+    cwd: options.consumerRoot, encoding: 'utf8', timeout: 20000, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PATH: '' },
+  });
+  for (const relative of ['install/vendor/js-yaml.js', 'install/vendor/js-yaml/dist/package.json']) {
+    fs.writeFileSync(path.join(options.mount, relative), '{}');
+    const result = cli();
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /Unexpected vendor/);
+    assert.equal(fs.existsSync(path.join(options.consumerRoot, '.github')), false);
+    fs.unlinkSync(path.join(options.mount, relative));
+  }
+  fs.appendFileSync(parser, `\nimport fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(marker)}, 'executed');\n`);
+  const result = cli();
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /Altered package file/);
+  assert.equal(fs.existsSync(marker), false);
+  assert.equal(fs.existsSync(path.join(options.consumerRoot, '.github')), false);
+  fs.writeFileSync(parser, original);
+});
+
+test('settings concurrent edits survive write rejection and post-write rollback', async context => {
+  const options = await fixture(context);
+  fs.mkdirSync(path.join(options.consumerRoot, '.vscode'));
+  const target = path.join(options.consumerRoot, '.vscode/settings.json');
+  fs.writeFileSync(target, '{}\n');
+  const prepared = prepareSettings(options.consumerRoot, options.mount);
+  fs.writeFileSync(target, '{"user": true}\n');
+  assert.throws(prepared.write, /Concurrent settings/);
+  assert.equal(fs.readFileSync(target, 'utf8'), '{"user": true}\n');
+  const settings = prepareSettings(options.consumerRoot, options.mount);
+  assert.throws(() => activateRuntime({ mount: options.mount, settings, fault(phase) {
+    if (phase === 'after-settings') {
+      fs.writeFileSync(target, '{"user": "concurrent"}\n');
+      throw new Error('post-write failure');
+    }
+  } }), /restoration failed.*Recovery backup retained/);
+  assert.equal(fs.readFileSync(target, 'utf8'), '{"user": "concurrent"}\n');
+});
 
 test('optional local ignore permits ordinary init without changing package identity', async context => {
   const options = await fixture(context);
@@ -57,7 +419,7 @@ test('optional local ignore permits ordinary init without changing package ident
   const ignore = path.join(options.mount, 'build/.gitignore');
   assert.deepEqual(fs.readFileSync(ignore), Buffer.from('*\n'));
   assert.deepEqual(validateActiveRuntime(options.mount), manifest);
-  fs.rmSync(ignore);
+  removeFixture(ignore);
   assert.equal((await initialize(options)).ready, true);
   assert.deepEqual(validatePackage(options.mount), manifest);
   assert.deepEqual(validateActiveRuntime(options.mount), manifest);
@@ -68,7 +430,7 @@ for (const invalid of ['wrong bytes', 'directory', 'symlink', 'hardlink', 'unrea
   test(`optional local ignore still rejects ${invalid} before init writes`, async context => {
     const options = await fixture(context);
     const ignore = path.join(options.mount, 'build/.gitignore');
-    fs.rmSync(ignore);
+    removeFixture(ignore);
     if (invalid === 'wrong bytes') fs.writeFileSync(ignore, '*\r\n');
     if (invalid === 'directory') fs.mkdirSync(ignore);
     if (invalid === 'symlink') {
@@ -90,7 +452,7 @@ for (const invalid of ['wrong bytes', 'directory', 'symlink', 'hardlink', 'unrea
       });
     }
     if (invalid === 'extra file') fs.writeFileSync(path.join(options.mount, 'build/extra.txt'), 'extra');
-    if (invalid === 'missing payload') fs.rmSync(path.join(options.mount, 'build/scripts/parse-input.mjs'));
+    if (invalid === 'missing payload') removeFixture(path.join(options.mount, 'build/scripts/parse-input.mjs'));
     assert.throws(() => validatePackage(options.mount));
     assert.throws(() => validateActiveRuntime(options.mount));
     await assert.rejects(initialize(options));
@@ -438,10 +800,10 @@ test('owned vendor closes files, intermediate directories and links without whit
       .flatMap(relative => [['link', relative], ['file', relative]]),
   ];
   for (const [index, [kind, relative]] of cases.entries()) {
-    fs.rmSync(vendor, { recursive: true, force: true });
-    fs.cpSync(path.join(sourceRoot, 'install/vendor'), vendor, { recursive: true });
+    removeFixture(vendor);
+    copyFixture(path.join(sourceRoot, 'install/vendor'), vendor);
     const target = path.join(vendor, relative);
-    if (fs.existsSync(target)) fs.rmSync(target, { recursive: true });
+    removeFixture(target);
     if (kind === 'file') fs.writeFileSync(target, '{}');
     if (kind === 'directory') fs.mkdirSync(target);
     if (kind === 'link' || kind === 'hardlink') {
@@ -473,12 +835,12 @@ test('owned vendor rejects native POSIX special file nodes before reading', {
   const options = await fixture(context);
   for (const relative of ['install/vendor/jsonc-parser/lib/umd/main.js', 'install/vendor/jsonc-parser/lib/umd/impl']) {
     const target = path.join(options.mount, relative);
-    fs.rmSync(target, { recursive: true });
+    removeFixture(target);
     const result = spawnSync('mkfifo', [target], { timeout: 5000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     assert.equal(result.status, 0, result.stderr);
     assert.throws(() => validateVendor(options.mount), /Non-regular|Non-directory/);
-    fs.rmSync(target);
-    fs.cpSync(path.join(sourceRoot, relative), target, { recursive: true });
+    removeFixture(target);
+    copyFixture(path.join(sourceRoot, relative), target);
   }
 });
 
@@ -502,7 +864,7 @@ test('ordinary init still rejects modified declared vendor bytes before executio
 
 test('missing vendored dependency fails explicitly before parser execution or discovery writes', async context => {
   const options = await fixture(context);
-  fs.rmSync(path.join(options.mount, 'install/vendor/jsonc-parser/lib/umd/main.js'));
+  removeFixture(path.join(options.mount, 'install/vendor/jsonc-parser/lib/umd/main.js'));
   const result = spawnSync(process.execPath, [path.join(options.mount, 'install/init.mjs')], {
     cwd: options.consumerRoot, timeout: 10000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -573,7 +935,7 @@ test('linked consumer rejection reports assessed previous runtime availability',
   for (const state of ['valid', 'invalid', 'absent']) {
     const helper = path.join(options.mount, 'build/scripts/parse-input.mjs');
     if (state === 'invalid') fs.appendFileSync(helper, '\n');
-    if (state === 'absent') fs.rmSync(path.join(options.mount, 'build'), { recursive: true });
+    if (state === 'absent') removeFixture(path.join(options.mount, 'build'));
     const before = state === 'absent' ? null : fs.readFileSync(helper);
     const result = spawnSync(process.execPath, [path.join(options.mount, 'install/init.mjs'), '--consumer-root', linked], {
       cwd: options.consumerRoot, timeout: 10000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
@@ -626,7 +988,7 @@ test('settings hardlinks and ancestor links are refused before writes', async co
   fs.linkSync(original, path.join(options.consumerRoot, '.vscode/settings.json'));
   await assert.rejects(initialize(options), /linked input/);
   assert.equal(fs.readFileSync(original, 'utf8'), '{}\n');
-  fs.rmSync(path.join(options.consumerRoot, '.vscode'), { recursive: true });
+  removeFixture(path.join(options.consumerRoot, '.vscode'));
   fs.mkdirSync(path.join(options.consumerRoot, 'outside'));
   try { fs.symlinkSync(path.join(options.consumerRoot, 'outside'), path.join(options.consumerRoot, '.vscode'), process.platform === 'win32' ? 'junction' : 'dir'); }
   catch (error) { if (error.code === 'EPERM') { context.skip('Platform disallows link creation'); return; } throw error; }

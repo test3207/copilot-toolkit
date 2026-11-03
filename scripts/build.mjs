@@ -2,8 +2,8 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { runtimeFiles, bootstrapFiles, hash, identity, safePath, readBytes, writeBytes,
-  validatePackage, validateActiveRuntime, activateRuntime } from '../install/runtime.mjs';
+import { runtimeFiles, bootstrapFiles, copilotDerivations, hash, identity, safePath, readBytes, writeBytes,
+  validateVendor, validatePackage, validateActiveRuntime, activateRuntime, removeTree } from '../install/runtime.mjs';
 
 const buildInputs = ['scripts/build.mjs'];
 
@@ -37,9 +37,11 @@ export async function stageBuild({ sourceRoot, stagingParent, fault = () => {} }
     (process.platform === 'win32' ? selected.toLowerCase() : selected)) {
     throw new Error('Build requires the toolkit source checkout, not a consumer parent checkout');
   }
+  validateVendor(sourceRoot);
   const inputs = snapshotInputs(sourceRoot);
   const sourceCommit = git(sourceRoot, ['rev-parse', '--verify', 'HEAD']);
   const dirty = git(sourceRoot, ['status', '--porcelain', '--untracked-files=all', '--', ...inputs.keys()]) !== '';
+  fault('snapshot', sourceRoot);
   const root = fs.mkdtempSync(path.join(safePath(stagingParent), '.toolkit-stage-'));
   try {
     writeBytes(root, '.gitignore', '*\n');
@@ -50,17 +52,24 @@ export async function stageBuild({ sourceRoot, stagingParent, fault = () => {} }
       writeBytes(root, target, bytes);
       payload.push({ path: target, sha256: hash(bytes) });
     }
+    validateVendor(root);
+    const { generateCopilot } = await import(pathToFileURL(safePath(root, 'install/copilot.mjs')).href);
+    for (const [relative, bytes] of await generateCopilot(inputs)) {
+      writeBytes(root, relative, bytes);
+      payload.push({ path: relative, sha256: hash(bytes) });
+    }
     payload.sort((left, right) => left.path < right.path ? -1 : 1);
     const inputEntries = [...inputs].map(([relative, bytes]) => ({ path: relative, sha256: hash(bytes) }));
-    const manifest = { version: 1, sourceCommit, dirty, inputs: inputEntries, inputsHash: identity(inputEntries),
-      payload, payloadHash: identity(payload) };
+    const derivations = copilotDerivations();
+    const manifest = { version: 2, sourceCommit, dirty, inputs: inputEntries, inputsHash: identity(inputEntries),
+      payload, payloadHash: identity(payload), derivations, derivationsHash: identity(derivations) };
     writeBytes(root, 'build/.gitignore', '*\n');
     writeBytes(root, 'build/provenance.json', `${JSON.stringify(manifest, null, 2)}\n`);
     fault('staged', root);
     validatePackage(root);
     return { root, manifest };
   } catch (error) {
-    fs.rmSync(root, { recursive: true, force: true });
+    removeTree(root);
     throw error;
   }
 }
@@ -71,7 +80,7 @@ export async function build({ sourceRoot = fileURLToPath(new URL('../', import.m
     activateRuntime({ mount: sourceRoot, candidate: candidate.root, fault });
     return candidate.manifest;
   } finally {
-    fs.rmSync(candidate.root, { recursive: true, force: true });
+    removeTree(candidate.root);
   }
 }
 
