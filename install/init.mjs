@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { activateRuntime, validatePackage, validateActiveRuntime, validateVendor, safePath, readBytes, writeBytes } from './runtime.mjs';
+import { activateRuntime, validatePackage, validateActiveRuntime, validateVendor, safePath, readBytes, writeBytes, removeTree } from './runtime.mjs';
 
 export const toolkitMount = fileURLToPath(new URL('../', import.meta.url));
 const locations = {
@@ -12,9 +12,7 @@ const locations = {
   'chat.promptFilesLocations': 'prompts',
 };
 
-export function prepareSettings(consumerRoot, mount) {
-  validateVendor(toolkitMount);
-  const { parseTree, findNodeAtLocation, modify, applyEdits, createScanner, SyntaxKind } = createRequire(import.meta.url)('./vendor/jsonc-parser');
+function consumerMount(consumerRoot, mount) {
   consumerRoot = fs.realpathSync.native(safePath(consumerRoot));
   mount = fs.realpathSync.native(safePath(mount));
   const mountRelative = path.relative(consumerRoot, mount).split(path.sep).join('/');
@@ -22,6 +20,15 @@ export function prepareSettings(consumerRoot, mount) {
   const selfHosted = mountRelative === '';
   const mountName = process.platform === 'win32' ? mountRelative.toLowerCase() : mountRelative;
   if (!selfHosted && mountName !== '.copilot-toolkit') throw new Error('Toolkit mount must be the consumer root itself or its direct .copilot-toolkit child');
+  return { consumerRoot, mount, mountRelative, selfHosted };
+}
+
+export function prepareSettings(consumerRoot, mount) {
+  validateVendor(toolkitMount);
+  const { parseTree, findNodeAtLocation, modify, applyEdits, createScanner, SyntaxKind } = createRequire(import.meta.url)('./vendor/jsonc-parser');
+  const layout = consumerMount(consumerRoot, mount);
+  ({ consumerRoot, mount } = layout);
+  const { mountRelative, selfHosted } = layout;
   const target = safePath(consumerRoot, '.vscode/settings.json');
   const directoryExisted = fs.existsSync(path.dirname(target));
   const before = fs.existsSync(target) ? readBytes(consumerRoot, '.vscode/settings.json') : null;
@@ -105,7 +112,7 @@ export function prepareSettings(consumerRoot, mount) {
     if (current?.value !== enabled) edit([key, built], enabled);
   }
   const after = Buffer.from(bom + text);
-  function replace(bytes) {
+  function replace(bytes, expected) {
     safePath(consumerRoot, '.vscode/settings.json');
     if (fs.existsSync(target)) readBytes(consumerRoot, '.vscode/settings.json');
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -117,18 +124,29 @@ export function prepareSettings(consumerRoot, mount) {
         fs.writeFileSync(replacement, bytes, { flag: 'wx', mode });
         fs.chmodSync(replacement, mode);
       }
+      if (!matches(currentBytes(), expected)) throw new Error('Concurrent settings change; no overwrite permitted');
       fs.renameSync(replacement, target);
     } finally {
-      fs.rmSync(scratch, { recursive: true, force: true });
+      removeTree(scratch);
     }
   }
+  function currentBytes() {
+    return fs.existsSync(safePath(consumerRoot, '.vscode/settings.json')) ? readBytes(consumerRoot, '.vscode/settings.json') : null;
+  }
+  function matches(bytes, expected) { return bytes === null ? expected === null : expected !== null && bytes.equals(expected); }
+  function recheck() {
+    if (!matches(currentBytes(), before)) throw new Error('Concurrent settings change; no overwrite permitted');
+  }
   return {
-    before, after,
-    write() { if (!before?.equals(after)) replace(after); },
+    before, after, recheck,
+    write() { recheck(); if (!before?.equals(after)) replace(after, before); },
     restore() {
-      if (before !== null) replace(before);
+      const current = currentBytes();
+      if (matches(current, before)) return;
+      if (!matches(current, after)) throw new Error('Concurrent settings edit prevents restoration');
+      if (before !== null) replace(before, after);
       else {
-        fs.rmSync(safePath(consumerRoot, '.vscode/settings.json'), { force: true });
+        fs.unlinkSync(safePath(consumerRoot, '.vscode/settings.json'));
         if (!directoryExisted && fs.existsSync(path.dirname(target)) && !fs.readdirSync(path.dirname(target)).length) fs.rmdirSync(path.dirname(target));
       }
     },
@@ -189,7 +207,7 @@ export function diagnostics({ probe = spawnSync } = {}) {
   return { tools, warnings, budgetMs: 15000 };
 }
 
-export async function initialize({ mount = toolkitMount, consumerRoot = process.cwd(), build = false, fault = () => {}, diagnose = diagnostics } = {}) {
+export async function initialize({ mount = toolkitMount, consumerRoot = process.cwd(), build = false, harness = 'local', fault = () => {}, diagnose = diagnostics } = {}) {
   mount = safePath(mount);
   let previous;
   try { previous = validateActiveRuntime(mount); } catch {}
@@ -197,18 +215,31 @@ export async function initialize({ mount = toolkitMount, consumerRoot = process.
   try {
     consumerRoot = safePath(consumerRoot);
     if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('Node 24 or newer is required');
-    if (!build) validatePackage(mount);
-    const settings = prepareSettings(consumerRoot, mount);
+    if (!['local', 'copilot'].includes(harness)) throw new Error('Harness must be local or copilot');
+    if (!build) {
+      const manifest = validatePackage(mount);
+      if (harness === 'copilot' && manifest.version !== 2) throw new Error('Copilot preparation requires provenance v2; rebuild the package');
+    }
+    ({ consumerRoot, mount } = consumerMount(consumerRoot, mount));
+    const settings = harness === 'local' ? prepareSettings(consumerRoot, mount) : undefined;
+    validateVendor(toolkitMount);
     if (build) {
       const builder = safePath(mount, 'scripts/build.mjs');
       const { stageBuild } = await import(pathToFileURL(builder).href);
       candidate = await stageBuild({ sourceRoot: mount, stagingParent: mount, fault });
     }
-    activateRuntime({ mount, candidate: candidate?.root, settings, fault });
+    const { prepareCopilot } = await import('./copilot.mjs');
+    const projection = await prepareCopilot({ consumerRoot, packageRoot: candidate?.root ?? mount, remove: harness === 'local' });
+    fault('planned');
+    activateRuntime({ mount, candidate: candidate?.root, settings, projection, fault });
     const manifest = validatePackage(mount);
     let environment;
     try { environment = diagnose(); } catch { environment = { tools: [], warnings: ['Environment diagnostics failed; verify workflow prerequisites manually.'] }; }
-    return { ready: true, sourceCommit: manifest.sourceCommit, inputIdentity: manifest.inputsHash,
+    const state = harness === 'copilot' ? { status: 'prepared', ready: false, activationVerified: false,
+      registration: 'not-checked', pluginLocation: path.join(mount, 'build/copilot/plugin'),
+      pendingAction: 'Register pluginLocation in User/MACHINE-scope chat.pluginLocations, reload the Copilot Host, and verify discovery and execution. No registration or live activation was checked.' }
+      : { status: 'ready', ready: true };
+    return { ...state, harness, sourceCommit: manifest.sourceCommit, inputIdentity: manifest.inputsHash,
       dirty: manifest.dirty, runtime: path.join(mount, 'build'), ...environment };
   } catch (error) {
     error.previousRuntimeAvailable = false;
@@ -218,7 +249,7 @@ export async function initialize({ mount = toolkitMount, consumerRoot = process.
     } catch {}
     throw error;
   } finally {
-    if (candidate) fs.rmSync(candidate.root, { recursive: true, force: true });
+    if (candidate) removeTree(candidate.root);
   }
 }
 
@@ -231,6 +262,7 @@ function argumentsFor(values) {
     seen.add(flag);
     if (flag === '--build') options.build = true;
     else if (flag === '--consumer-root' && values[index + 1] && !values[index + 1].startsWith('--')) options.consumerRoot = path.resolve(values[++index]);
+    else if (flag === '--harness' && ['local', 'copilot'].includes(values[index + 1])) options.harness = values[++index];
     else throw new Error('Unknown option or missing argument');
   }
   return options;
@@ -241,13 +273,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   try {
     options = argumentsFor(process.argv.slice(2));
   } catch (error) {
-    console.error(`${error.message}. Usage: node install/init.mjs [--build] [--consumer-root <path>]`);
+    console.error(`${error.message}. Usage: node install/init.mjs [--build] [--consumer-root <path>] [--harness local|copilot]`);
     process.exitCode = 2;
   }
   if (options) {
     try {
-      console.log(JSON.stringify(await initialize(options), null, 2));
-      console.log('Ready. Reload VS Code and verify built discovery; consumer instructions were not changed.');
+      const result = await initialize(options);
+      console.log(JSON.stringify(result, null, 2));
+      console.log(result.status === 'prepared' ? 'Prepared. Registration and live activation remain unverified; follow pendingAction.'
+        : 'Ready. Reload VS Code and verify built discovery; consumer instructions were not changed.');
     } catch (error) {
       console.error(`Init failed; this attempt is not ready. Previous runtime available: ${error.previousRuntimeAvailable ?? 'unknown'}. ${error.message}`);
       process.exitCode = 1;

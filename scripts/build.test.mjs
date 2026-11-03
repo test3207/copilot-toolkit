@@ -8,10 +8,38 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { build, stageBuild, snapshotInputs } from './build.mjs';
-import { validatePackage, activateRuntime } from '../install/runtime.mjs';
+import { validatePackage, validateActiveRuntime, activateRuntime, identity } from '../install/runtime.mjs';
 import { initialize } from '../install/init.mjs';
+import { generateCopilot, parseMarkdown, projectAgent } from '../install/copilot.mjs';
 
 const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
+test('Copilot agent projection preserves source metadata, bodies and bytes', async () => {
+  const names = fs.readdirSync(path.join(sourceRoot, '.github/agents'))
+    .filter(name => name !== '_template.md').map(name => name.replace(/\.md$/, ''));
+  assert.equal(names.length, 10);
+  for (const name of names) {
+    const file = path.join(sourceRoot, '.github/agents', `${name}.md`);
+    const before = fs.readFileSync(file);
+    const source = await parseMarkdown(before);
+    const projected = await projectAgent(name, before);
+    const result = await parseMarkdown(projected);
+    if (name === 'pr-quality-checker') delete source.metadata.model;
+    else assert.deepEqual(projected, before);
+    assert.deepEqual(result.metadata, source.metadata);
+    assert.equal(result.body, source.body);
+    assert.deepEqual(fs.readFileSync(file), before);
+  }
+  const extra = Buffer.from('---\nname: pr-quality-checker\nmodel: fixed\ntools: [read, search]\nunknown: {nested: [true, 17, custom]}\nuser-invocable: false\n---\nBody unchanged.\n');
+  const result = await parseMarkdown(await projectAgent('pr-quality-checker', extra));
+  assert.deepEqual(result.metadata.unknown, { nested: [true, 17, 'custom'] });
+  assert.deepEqual(result.metadata.tools, ['read', 'search']);
+  assert.equal(result.metadata['user-invocable'], false);
+  assert.equal(result.metadata.model, undefined);
+  assert.equal(result.body, 'Body unchanged.\n');
+  for (const header of ['name: [wrong]', 'name: one\nname: two', 'name: one\n...\nname: two']) {
+    await assert.rejects(parseMarkdown(Buffer.from(`---\n${header}\n---\nbody`)));
+  }
+});
 const expectedRuntime = `
 .github/agents/_template.md
 .github/agents/pr-finding-validator.md
@@ -88,8 +116,14 @@ templates/copilot-instructions.template.md
 templates/template-skill/SKILL.md
 `.trim().split('\n').sort();
 const expectedBootstrap = `
+install/copilot.mjs
 install/init.mjs
 install/runtime.mjs
+install/vendor/js-yaml/LICENSE
+install/vendor/js-yaml/NOTICE.md
+install/vendor/js-yaml/README.md
+install/vendor/js-yaml/package.json
+install/vendor/js-yaml/dist/js-yaml.mjs
 install/vendor/jsonc-parser/LICENSE.md
 install/vendor/jsonc-parser/NOTICE.md
 install/vendor/jsonc-parser/README.md
@@ -102,6 +136,46 @@ install/vendor/jsonc-parser/lib/umd/impl/parser.js
 install/vendor/jsonc-parser/lib/umd/impl/scanner.js
 install/vendor/jsonc-parser/lib/umd/impl/string-intern.js
 `.trim().split('\n').sort();
+
+test('Copilot generation has five manual entries, seven resources, four aliases and ten agents', async () => {
+  const inputs = snapshotInputs(sourceRoot);
+  const before = new Map([...inputs].map(([name, bytes]) => [name, Buffer.from(bytes)]));
+  const outputs = await generateCopilot(inputs);
+  assert.deepEqual(await generateCopilot(inputs), outputs);
+  assert.deepEqual(inputs, before);
+  assert.deepEqual(JSON.parse(outputs.get('build/copilot/plugin/plugin.json')),
+    { name: 'copilot-toolkit', version: '0.0.1', skills: ['./skills'] });
+  const entries = ['dep', 'onboard-repo', 'pr-review', 'tool-dev', 'work'];
+  const resources = ['coding-standards', 'dep-audit', 'distill-submodule-rules', 'onboard-repo-internal',
+    'pr-review-internal', 'tool-dev-internal', 'work-internal'];
+  assert.deepEqual([...outputs.keys()].filter(name => name.endsWith('/SKILL.md')).map(name => name.split('/')[4]).sort(),
+    [...entries, ...resources].sort());
+  assert.equal([...outputs.keys()].filter(name => name.startsWith('build/copilot/agents/')).length, 10);
+  assert.equal([...outputs.keys()].some(name => name.includes('_template')), false);
+  for (const name of entries) {
+    const output = await parseMarkdown(outputs.get(`build/copilot/plugin/skills/${name}/SKILL.md`));
+    const original = await parseMarkdown(inputs.get(`.github/prompts/${name}.prompt.md`), { requireName: false });
+    assert.deepEqual(output.metadata, { ...original.metadata, name, 'user-invocable': true, 'disable-model-invocation': true });
+    for (const match of output.body.matchAll(/\]\((\.\.\/[^)]+)\)/g)) {
+      const target = path.posix.normalize(`build/copilot/plugin/skills/${name}/${match[1]}`);
+      assert.ok(outputs.has(target), target);
+    }
+  }
+  const toolDev = outputs.get('build/copilot/plugin/skills/tool-dev/SKILL.md').toString();
+  assert.doesNotMatch(toolDev, /\$\{input:|\$ARGUMENTS/);
+  for (const phrase of ['single- or double-quoted name including spaces', 'Preserve the remaining request text verbatim',
+    'retain all original attachments', 'before', 'ask for clarification']) assert.ok(toolDev.toLowerCase().includes(phrase.toLowerCase()));
+  const work = outputs.get('build/copilot/plugin/skills/work-internal/SKILL.md').toString();
+  assert.match(work, /MUST: create todo list FIRST/);
+  assert.match(work, /ACTIVE workspace agents/);
+  assert.match(work, /work-implementer\.agent\.md/);
+  assert.match(work, /Immutable source\/reference agents/);
+  const injected = Buffer.from('---\nname: old\nuser-invocable: false\ndisable-model-invocation: false\nunknown: [17, true]\ntools: [read]\n---\nPreserve me.');
+  inputs.set('.github/prompts/dep.prompt.md', injected);
+  const custom = await parseMarkdown((await generateCopilot(inputs)).get('build/copilot/plugin/skills/dep/SKILL.md'));
+  assert.deepEqual(custom.metadata, { name: 'dep', 'user-invocable': false, 'disable-model-invocation': false, unknown: [17, true], tools: ['read'] });
+  assert.equal(custom.body, 'Preserve me.');
+});
 
 function temporaryDirectory(context) {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'toolkit-build-'));
@@ -246,8 +320,14 @@ test('minimal runtime rejects source fallback and executes without authoring fil
 test('independent expected set and every raw byte match the complete isolated package', async context => {
   const temporary = temporaryDirectory(context);
   const candidate = await stageBuild({ sourceRoot, stagingParent: temporary });
+  const generated = ['build/copilot/plugin/plugin.json', ...expectedRuntime.flatMap(file => {
+    if (file.startsWith('.github/prompts/')) return [file.replace('.github/prompts/', 'build/copilot/plugin/skills/').replace('.prompt.md', '/SKILL.md')];
+    if (file.startsWith('.github/agents/') && !file.endsWith('/_template.md')) return [file.replace('.github/agents/', 'build/copilot/agents/').replace('.md', '.agent.md')];
+    if (!file.startsWith('.github/skills/')) return [];
+    return [file.replace('.github/skills/', 'build/copilot/plugin/skills/').replace(/\/skills\/(work|pr-review|tool-dev|onboard-repo)\//, '/skills/$1-internal/')];
+  })];
   const expected = [...expectedRuntime.map(file => `build/${file}`), ...expectedBootstrap,
-    '.gitignore', 'build/.gitignore', 'build/provenance.json'].sort();
+    ...generated, '.gitignore', 'build/.gitignore', 'build/provenance.json'].sort();
   assert.deepEqual(fileSet(candidate.root), expected);
   assert.deepEqual(candidate.manifest.inputs.map(entry => entry.path),
     [...expectedRuntime, ...expectedBootstrap, 'scripts/build.mjs'].sort());
@@ -271,6 +351,74 @@ test('independent expected set and every raw byte match the complete isolated pa
     }
   }
   assert.equal(candidate.manifest.sourceCommit, git(['rev-parse', 'HEAD'], sourceRoot));
+  assert.equal(candidate.manifest.version, 2);
+  assert.deepEqual(candidate.manifest.derivations.map(entry => entry.path), generated.sort());
+});
+
+test('Copilot provenance rejects tampering and unknown lineage and uses frozen source bytes', async context => {
+  const { root, consumerRoot } = sourceFixture(context);
+  const source = '.github/prompts/dep.prompt.md';
+  const bytes = fs.readFileSync(path.join(root, source));
+  const candidate = await stageBuild({ sourceRoot: root, stagingParent: consumerRoot, fault(phase) {
+    if (phase === 'snapshot') {
+      write(root, source, 'changed after snapshot');
+      fs.appendFileSync(path.join(root, 'install/copilot.mjs'), '\nthrow new Error("not frozen");\n');
+    }
+  } });
+  assert.deepEqual(fs.readFileSync(path.join(candidate.root, 'build', source)), bytes);
+  assert.match(fs.readFileSync(path.join(candidate.root, 'build/copilot/plugin/skills/dep/SKILL.md'), 'utf8'), /dep-audit/);
+  const manifest = candidate.manifest;
+  for (const mutate of [
+    draft => { draft.derivations.pop(); },
+    draft => { draft.derivations[0].inputs.push('not-declared'); },
+    draft => { draft.derivations[0].transform = 'unknown'; },
+    draft => { draft.derivations[0].path = 'build/copilot/unknown'; },
+    draft => { draft.inputs.push({ path: 'unknown', sha256: 'a'.repeat(64) }); draft.inputs.sort((left, right) => left.path.localeCompare(right.path)); draft.inputsHash = identity(draft.inputs); },
+  ]) {
+    const draft = structuredClone(manifest);
+    mutate(draft);
+    draft.derivationsHash = identity(draft.derivations);
+    write(candidate.root, 'build/provenance.json', JSON.stringify(draft));
+    assert.throws(() => validatePackage(candidate.root));
+  }
+  write(candidate.root, 'build/provenance.json', JSON.stringify(manifest));
+  const target = 'build/copilot/agents/work-implementer.agent.md';
+  const original = fs.readFileSync(path.join(candidate.root, target));
+  write(candidate.root, target, 'tampered');
+  assert.throws(() => validatePackage(candidate.root), /Altered package/);
+  fs.rmSync(path.join(candidate.root, target));
+  assert.throws(() => validatePackage(candidate.root));
+  write(candidate.root, target, original);
+  fs.mkdirSync(path.join(candidate.root, 'build/copilot/unexpected'));
+  assert.throws(() => validatePackage(candidate.root), /Unexpected runtime directory/);
+  fs.rmdirSync(path.join(candidate.root, 'build/copilot/unexpected'));
+  assert.throws(() => activateRuntime({ mount: root, candidate: candidate.root }), /Mixed bootstrap/);
+  assert.equal(fs.existsSync(path.join(root, 'build')), false);
+  validatePackage(candidate.root);
+});
+
+test('Copilot provenance retains a strict v1 active reader for rollback', async context => {
+  const candidate = await stageBuild({ sourceRoot, stagingParent: temporaryDirectory(context) });
+  const manifest = candidate.manifest;
+  manifest.version = 1;
+  delete manifest.derivations;
+  delete manifest.derivationsHash;
+  manifest.payload = manifest.payload.filter(entry => !entry.path.startsWith('build/copilot/')
+    && entry.path !== 'install/copilot.mjs' && !entry.path.startsWith('install/vendor/js-yaml/'));
+  manifest.inputs = manifest.inputs.filter(entry => entry.path !== 'install/copilot.mjs' && !entry.path.startsWith('install/vendor/js-yaml/'));
+  manifest.inputsHash = identity(manifest.inputs);
+  manifest.payloadHash = identity(manifest.payload);
+  fs.rmSync(path.join(candidate.root, 'build/copilot'), { recursive: true });
+  fs.rmSync(path.join(candidate.root, 'install/copilot.mjs'));
+  fs.rmSync(path.join(candidate.root, 'install/vendor/js-yaml'), { recursive: true });
+  write(candidate.root, 'build/provenance.json', JSON.stringify(manifest));
+  assert.equal(validateActiveRuntime(candidate.root).version, 1);
+  assert.equal(validatePackage(candidate.root).version, 1);
+  await assert.rejects(initialize({ mount: candidate.root, consumerRoot: path.dirname(candidate.root), harness: 'copilot', diagnose: () => ({}) }), /requires provenance v2/);
+  assert.equal(fs.existsSync(path.join(path.dirname(candidate.root), '.github')), false);
+  assert.equal(fs.existsSync(path.join(path.dirname(candidate.root), '.vscode')), false);
+  write(candidate.root, 'build/scripts/parse-input.mjs', 'altered');
+  assert.throws(() => validateActiveRuntime(candidate.root), /Altered package/);
 });
 
 test('recipe gate instructions pair the built executable with explicit authoring inputs', () => {
@@ -625,4 +773,57 @@ test('explicit builder CLI and init CLI preserve source revision and source-disa
   assert.equal(settings['chat.promptFilesLocations']['build/.github/prompts'], true);
   assert.equal(git(['rev-parse', 'HEAD'], root), revision);
   validatePackage(root);
+});
+
+test('Copilot rebuild and Local fallback share agent, ledger, runtime and settings recovery', async context => {
+  const { root, consumerRoot } = sourceFixture(context);
+  const options = { mount: root, consumerRoot, build: true, harness: 'copilot', diagnose: () => ({}) };
+  await initialize(options);
+  const ledger = '.github/.copilot-toolkit/copilot-agents.json';
+  const agent = '.github/agents/work-implementer.agent.md';
+  const original = validatePackage(root);
+  const beforeLedger = fs.readFileSync(path.join(consumerRoot, ledger));
+  const beforeAgent = fs.readFileSync(path.join(consumerRoot, agent));
+  fs.appendFileSync(path.join(root, '.github/agents/work-implementer.md'), '\nUpdated source body\n');
+  for (const phase of ['staged', 'planned', 'before-activate', 'activate', 'after-activate', 'agent-write', 'agent-written', 'ledger-write', 'ledger-written', 'after-settings']) {
+    await assert.rejects(initialize({ ...options, fault(stage) { if (stage === phase) throw new Error(phase); } }));
+    assert.deepEqual(validatePackage(root), original, phase);
+    assert.deepEqual(fs.readFileSync(path.join(consumerRoot, ledger)), beforeLedger, phase);
+    assert.deepEqual(fs.readFileSync(path.join(consumerRoot, agent)), beforeAgent, phase);
+    assert.equal(fs.existsSync(path.join(consumerRoot, '.vscode')), false);
+    assert.equal(fs.readdirSync(root).some(name => /^\.(?:toolkit-stage|runtime-backup|runtime-lock)/.test(name)), false);
+  }
+  await initialize(options);
+  assert.match(fs.readFileSync(path.join(consumerRoot, agent), 'utf8'), /Updated source body/);
+  const current = validatePackage(root);
+  const currentLedger = fs.readFileSync(path.join(consumerRoot, ledger));
+  const currentAgent = fs.readFileSync(path.join(consumerRoot, agent));
+  write(consumerRoot, '.vscode/settings.json', '\uFEFF{\r\n// consumer\r\n"other":false\r\n}\r\n');
+  const settings = fs.readFileSync(path.join(consumerRoot, '.vscode/settings.json'));
+  fs.appendFileSync(path.join(root, '.github/agents/work-implementer.md'), '\nNext source body\n');
+  for (const phase of ['agent-written', 'ledger-written', 'settings-write', 'after-settings']) {
+    await assert.rejects(initialize({ ...options, harness: 'local', fault(stage) { if (stage === phase) throw new Error(phase); } }));
+    assert.deepEqual(validatePackage(root), current, phase);
+    assert.deepEqual(fs.readFileSync(path.join(consumerRoot, ledger)), currentLedger, phase);
+    assert.deepEqual(fs.readFileSync(path.join(consumerRoot, agent)), currentAgent, phase);
+    assert.deepEqual(fs.readFileSync(path.join(consumerRoot, '.vscode/settings.json')), settings, phase);
+  }
+});
+
+test('Copilot rebuild rollback preserves a concurrently edited runtime and retains its predecessor', async context => {
+  const { root, consumerRoot } = sourceFixture(context);
+  const options = { mount: root, consumerRoot, build: true, harness: 'copilot', diagnose: () => ({}) };
+  await initialize(options);
+  const previous = fs.readFileSync(path.join(root, 'build/provenance.json'));
+  fs.appendFileSync(path.join(root, '.github/agents/work-implementer.md'), '\nNew body\n');
+  await assert.rejects(initialize({ ...options, fault(phase) {
+    if (phase === 'after-settings') {
+      write(root, 'build/scripts/parse-input.mjs', 'Concurrent user runtime edit\n');
+      throw new Error('post-publication failure');
+    }
+  } }), /restoration failed.*Recovery backup retained/);
+  const backup = fs.readdirSync(root).find(name => name.startsWith('.runtime-backup-'));
+  assert.ok(backup);
+  assert.deepEqual(fs.readFileSync(path.join(root, backup, 'build/provenance.json')), previous);
+  assert.equal(fs.readFileSync(path.join(root, 'build/scripts/parse-input.mjs'), 'utf8'), 'Concurrent user runtime edit\n');
 });

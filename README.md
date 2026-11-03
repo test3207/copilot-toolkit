@@ -15,8 +15,9 @@ License: MIT.
 | `.github/prompts/<name>.prompt.md` | Thin-shim slash-command entry points (`/dep`, `/pr-review`, `/work`, `/tool-dev`, `/onboard-repo`). Each shim owns the MCP `tools:` allowlist and delegates the workflow body to the matching skill. Consumers discover these via `chat.promptFilesLocations` (see `INSTALL.md`). |
 | `scripts/` | Helper scripts, all Node. The two gates are `lint-public.mjs` and `lint-recipes.mjs`; see Contributing. |
 | `templates/` | Starter files for new consumers (`_template.prompt.md`, `template-skill/`, `copilot-instructions.template.md`). |
-| `install/` | Shared init (`init.mjs`), package validation and activation (`runtime.mjs`), pinned JSONC parser, standalone acquisition (`sync.mjs`), and tests. See `INSTALL.md`. |
+| `install/` | Shared init (`init.mjs`), package validation and recovery (`runtime.mjs`), Copilot projection (`copilot.mjs`), pinned JSONC/YAML parsers, standalone acquisition (`sync.mjs`), and tests. See `INSTALL.md`. |
 | `build/` | Locally ignored, validated runtime snapshot with raw-byte provenance. No source fallback. |
+| `build/copilot/` | Generated `plugin/` (five manual entries and seven resources) plus separate `agents/` (ten workspace projections). Plain build does not register or install them. |
 
 ## Self-bootstrap (dev loop for skill / agent authors)
 
@@ -113,6 +114,13 @@ the selected package and merges JSONC settings without requiring Git, source,
 npm or user-profile changes. Historical source tags use their own setup;
 sync acquisition is not runtime readiness. Release-asset delivery is planned,
 not implemented. See [INSTALL.md](INSTALL.md#build-and-init) for the lifecycle.
+
+Local remains the default. Explicit `--harness copilot` prepares the generated
+plugin and owned consumer agents without changing workspace or User/Profile
+settings. It reports **Prepared**, `ready: false` and an absolute plugin location
+for manual User/MACHINE-scope registration, not verified activation. See
+[Copilot preparation](INSTALL.md#explicit-copilot-preparation) for ownership,
+conflicts, recovery and returning to Local. Source authoring remains unchanged.
 
 Reload the VS Code window. Built toolkit skills, agents, and prompts coexist
 with the consumer's own `.github/skills/`, `.github/agents/`, and
